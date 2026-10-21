@@ -1,0 +1,10 @@
+Package: lan-mac-finder
+Version: 1.0.001
+Architecture: amd64
+Section: utils
+Priority: optional
+Maintainer: qishiyi <qishiyi77@gmail.com>
+Depends: python3 (>= 3.10), iproute2, iputils-ping, systemd
+Description: LAN MAC Finder for TOS 7
+ Discover routed physical IPv4 networks and match devices by
+ the last four hexadecimal characters of their MAC address.

@@ -1,0 +1,97 @@
+[zh-cn]
+name = "局域网 MAC 查询"
+auth = "qishiyi"
+descript = "发现当前局域网设备，读取网卡、IP、MAC 状态，并按 MAC 后四位快速定位设备。"
+release_note = "首个版本：自动识别物理网段、后台扫描、精确 MAC 后缀匹配与结果复制。"
+important = "扫描只读取本机路由和邻居表，不会更改 NAS 或其他设备的网络配置。"
+
+[zh-hk]
+name = "區域網絡 MAC 搜尋"
+auth = "qishiyi"
+descript = "搜尋目前區域網絡裝置，讀取網卡、IP、MAC 狀態，並按 MAC 尾四位定位裝置。"
+release_note = "首個版本：自動識別實體網段、背景掃描、精確 MAC 尾碼配對與結果複製。"
+important = "掃描只讀取本機路由和鄰居表，不會更改 NAS 或其他裝置的網絡設定。"
+
+[en-us]
+name = "LAN MAC Finder"
+auth = "qishiyi"
+descript = "Find devices on the current LAN and match the last four MAC characters with live interface and neighbor data."
+release_note = "First release: physical network discovery, background scanning, exact MAC suffix matching, and copy support."
+important = "The app only reads local routing and neighbor data. It never changes NAS or device network settings."
+
+[fr-fr]
+name = "Recherche MAC LAN"
+auth = "qishiyi"
+descript = "Trouvez les appareils du reseau local et filtrez-les par les quatre derniers caracteres de leur adresse MAC."
+release_note = "Premiere version : detection des reseaux physiques, analyse en arriere-plan et copie des resultats."
+important = "L'application lit uniquement le routage local et la table voisine, sans modifier la configuration reseau."
+
+[de-de]
+name = "LAN-MAC-Suche"
+auth = "qishiyi"
+descript = "Findet Geraete im aktuellen LAN und filtert sie anhand der letzten vier MAC-Zeichen."
+release_note = "Erste Version: physische Netzwerkerkennung, Hintergrundsuche und Kopieren der Treffer."
+important = "Die App liest nur lokale Routing- und Nachbardaten und aendert keine Netzwerkeinstellungen."
+
+[it-it]
+name = "Ricerca MAC LAN"
+auth = "qishiyi"
+descript = "Trova i dispositivi nella LAN corrente e filtra per gli ultimi quattro caratteri dell'indirizzo MAC."
+release_note = "Prima versione: rilevamento delle reti fisiche, scansione in background e copia dei risultati."
+important = "L'app legge solo routing e tabella dei vicini e non modifica la configurazione di rete."
+
+[es-es]
+name = "Buscador MAC LAN"
+auth = "qishiyi"
+descript = "Encuentra dispositivos en la LAN actual y filtra por los ultimos cuatro caracteres de su direccion MAC."
+release_note = "Primera version: deteccion de redes fisicas, escaneo en segundo plano y copia de resultados."
+important = "La aplicacion solo lee el enrutamiento y la tabla de vecinos sin cambiar la configuracion de red."
+
+[hu-hu]
+name = "LAN MAC kereső"
+auth = "qishiyi"
+descript = "Megkeresi az aktuális LAN eszközeit, és a MAC-cím utolsó négy karaktere alapján szűri őket."
+release_note = "Első kiadás: fizikai hálózatfelismerés, háttérszkennelés és találatok másolása."
+important = "Az alkalmazás csak helyi útvonal- és szomszédadatokat olvas, hálózati beállítást nem módosít."
+
+[ja-jp]
+name = "LAN MAC 検索"
+auth = "qishiyi"
+descript = "現在の LAN 上のデバイスを検出し、MAC アドレスの末尾 4 文字で絞り込みます。"
+release_note = "初版：物理ネットワーク検出、バックグラウンドスキャン、結果のコピーに対応。"
+important = "ローカルのルーティング情報と近隣テーブルのみを読み取り、ネットワーク設定は変更しません。"
+
+[ko-kr]
+name = "LAN MAC 찾기"
+auth = "qishiyi"
+descript = "현재 LAN의 장치를 찾고 MAC 주소 마지막 네 문자로 빠르게 구분합니다."
+release_note = "첫 버전: 물리 네트워크 감지, 백그라운드 검색 및 결과 복사 지원."
+important = "앱은 로컬 라우팅과 이웃 테이블만 읽으며 네트워크 설정을 변경하지 않습니다."
+
+[pl-pl]
+name = "Wyszukiwarka MAC LAN"
+auth = "qishiyi"
+descript = "Znajduje urzadzenia w biezacej sieci LAN i filtruje je po czterech ostatnich znakach adresu MAC."
+release_note = "Pierwsza wersja: wykrywanie sieci fizycznych, skanowanie w tle i kopiowanie wynikow."
+important = "Aplikacja tylko odczytuje lokalne trasy i tabele sasiadow, bez zmiany konfiguracji sieci."
+
+[ru-ru]
+name = "Поиск MAC в LAN"
+auth = "qishiyi"
+descript = "Находит устройства в текущей локальной сети и фильтрует их по последним четырём символам MAC."
+release_note = "Первый выпуск: поиск физических сетей, фоновое сканирование и копирование результатов."
+important = "Приложение только читает локальную маршрутизацию и таблицу соседей, не меняя настройки сети."
+
+[tr-tr]
+name = "LAN MAC Bulucu"
+auth = "qishiyi"
+descript = "Geçerli LAN cihazlarını bulur ve MAC adresinin son dört karakterine göre filtreler."
+release_note = "İlk sürüm: fiziksel ağ algılama, arka planda tarama ve sonuçları kopyalama."
+important = "Uygulama yalnızca yerel yönlendirme ve komşu verilerini okur, ağ ayarlarını değiştirmez."
+
+[pt-pt]
+name = "Localizador MAC LAN"
+auth = "qishiyi"
+descript = "Encontra dispositivos na LAN atual e filtra pelos quatro ultimos caracteres do endereco MAC."
+release_note = "Primeira versao: detecao de redes fisicas, analise em segundo plano e copia dos resultados."
+important = "A aplicacao apenas le o encaminhamento local e a tabela de vizinhos sem alterar a configuracao de rede."

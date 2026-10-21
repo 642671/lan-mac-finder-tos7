@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.idea/
+.vscode/
+.playwright-cli/
+output/
+build/
+dist/
+*.deb
+*.sha256

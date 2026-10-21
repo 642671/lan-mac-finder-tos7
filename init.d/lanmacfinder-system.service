@@ -1,0 +1,38 @@
+[Unit]
+Description=LAN MAC Finder WebUI service
+After=network.target
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=lan-mac-finder
+WorkingDirectory=/usr/local/lan-mac-finder
+ExecStart=/usr/bin/python3 /usr/local/lan-mac-finder/bin/lan-mac-finder-service
+ExecStopPost=-/bin/rm -f /var/api/lan-mac-finder.sock
+EnvironmentFile=-/usr/local/lan-mac-finder/lan-mac-finder.env
+TimeoutStartSec=30
+TimeoutStopSec=10
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
+# Keep only sandbox directives verified across the TOS 7.0 and 7.1 kernels.
+# Several stricter directives accepted by Ubuntu systemd are rejected by some
+# TOS 7.0 kernels with status=203/EXEC before Python can start.
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+
+# /var/api is a shared TOS directory and must remain writable for the
+# application-owned Unix socket. PrivateTmp is intentionally omitted.
+ReadWritePaths=/usr/local/lan-mac-finder/data /usr/local/lan-mac-finder/logs /var/api
+LimitNOFILE=65536
+LimitNPROC=256
+MemoryMax=256M
+CPUQuota=75%
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

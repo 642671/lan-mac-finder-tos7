@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>局域网 MAC 查询</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg?v=__APP_VERSION__">
+  <script>
+    (function () {
+      var theme = "light";
+      try {
+        theme = localStorage.getItem("lan-mac-finder-theme") || "";
+        if (theme !== "light" && theme !== "dark") {
+          theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        }
+      } catch (error) {
+        theme = "light";
+      }
+      document.documentElement.setAttribute("data-theme", theme);
+    }());
+  </script>
+  <link rel="stylesheet" href="./styles.css?v=__APP_VERSION__">
+</head>
+<body>
+  <div class="resize-safety-corner" aria-hidden="true"></div>
+
+  <header class="window-titlebar">
+    <div class="window-brand">
+      <svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M6.3 6.3a8 8 0 0 0 0 11.4"></path>
+        <path d="M17.7 6.3a8 8 0 0 1 0 11.4"></path>
+        <path d="M3.5 3.5a12 12 0 0 0 0 17"></path>
+        <path d="M20.5 3.5a12 12 0 0 1 0 17"></path>
+      </svg>
+      <span>局域网 MAC 查询</span>
+    </div>
+    <div class="titlebar-actions">
+      <div id="backendBadge" class="backend-badge is-checking" role="status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="backendBadgeText">正在连接服务</span>
+      </div>
+      <button
+        id="themeToggle"
+        class="icon-button titlebar-icon-button"
+        type="button"
+        aria-label="切换明暗主题"
+        data-tooltip="切换明暗主题">
+        <svg class="theme-icon theme-icon-light" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"></path>
+        </svg>
+        <svg class="theme-icon theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M12 3v2"></path>
+          <path d="M12 19v2"></path>
+          <path d="M3 12h2"></path>
+          <path d="M19 12h2"></path>
+          <path d="m5.6 5.6 1.4 1.4"></path>
+          <path d="m17 17 1.4 1.4"></path>
+          <path d="m18.4 5.6-1.4 1.4"></path>
+          <path d="M7 17 5.6 18.4"></path>
+          <circle cx="12" cy="12" r="4"></circle>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="MAC 查询控制">
+      <section class="control-section scan-control">
+        <div class="section-heading">
+          <span class="section-kicker">目标设备</span>
+          <h1>MAC 后缀定位</h1>
+          <p>在当前 NAS 所在的物理局域网中查找匹配设备。</p>
+        </div>
+
+        <form id="scanForm" class="scan-form" autocomplete="off" novalidate>
+          <label class="field-label" for="macSuffix">MAC 后四位</label>
+          <div id="inputShell" class="input-shell">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+              <path d="M7 9h2"></path>
+              <path d="M11 9h2"></path>
+              <path d="M15 9h2"></path>
+              <path d="M7 13h2"></path>
+              <path d="M11 13h2"></path>
+              <path d="M15 13h2"></path>
+            </svg>
+            <input
+              id="macSuffix"
+              name="macSuffix"
+              type="text"
+              maxlength="5"
+              placeholder="A1-B2"
+              spellcheck="false"
+              autocapitalize="characters"
+              aria-describedby="inputHint inputError">
+          </div>
+          <p id="inputHint" class="input-hint">AA-BB / AA:BB / AABB</p>
+          <p id="inputError" class="field-error" role="alert" hidden></p>
+
+          <div class="scan-actions">
+            <button id="scanButton" class="primary-button" type="submit" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="12" r="2.5"></circle>
+                <path d="M7.8 7.8a6 6 0 0 0 0 8.4"></path>
+                <path d="M16.2 7.8a6 6 0 0 1 0 8.4"></path>
+                <path d="M4.9 4.9a10 10 0 0 0 0 14.2"></path>
+                <path d="M19.1 4.9a10 10 0 0 1 0 14.2"></path>
+              </svg>
+              <span id="scanButtonText">开始扫描</span>
+            </button>
+            <button
+              id="stopButton"
+              class="secondary-button stop-button"
+              type="button"
+              disabled
+              data-tooltip="停止当前扫描">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+              </svg>
+              <span>停止</span>
+            </button>
+          </div>
+        </form>
+
+        <div class="scan-progress" id="scanProgress" hidden>
+          <div class="progress-copy">
+            <span id="progressLabel">正在扫描</span>
+            <strong id="progressValue">0%</strong>
+          </div>
+          <div
+            id="progressTrack"
+            class="progress-track"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0">
+            <div id="progressBar" class="progress-bar"></div>
+          </div>
+        </div>
+
+        <div id="scanState" class="scan-state is-idle" role="status" aria-live="polite">
+          <span class="state-indicator" aria-hidden="true"></span>
+          <div>
+            <strong id="scanStateTitle">准备就绪</strong>
+            <p id="scanStateMessage">正在读取网络环境。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="control-section network-section" aria-labelledby="networkHeading">
+        <div class="section-row">
+          <div>
+            <span class="section-kicker">扫描范围</span>
+            <h2 id="networkHeading">活动网段</h2>
+          </div>
+          <button
+            id="refreshButton"
+            class="icon-button"
+            type="button"
+            aria-label="刷新网段"
+            data-tooltip="重新读取当前物理网段">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M20 11a8 8 0 0 0-14.8-4"></path>
+              <path d="M4 4v4h4"></path>
+              <path d="M4 13a8 8 0 0 0 14.8 4"></path>
+              <path d="M20 20v-4h-4"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div id="networkSummary" class="network-summary">正在识别网段</div>
+        <div id="networkList" class="network-list" aria-live="polite"></div>
+        <div id="networkWarnings" class="network-warnings" hidden></div>
+      </section>
+
+      <footer class="sidebar-footer">
+        <span id="backendVersion" class="backend-version">服务 --</span>
+        <span class="footer-separator" aria-hidden="true"></span>
+        <span id="lastScanTime" class="last-scan-time">尚未扫描</span>
+      </footer>
+    </aside>
+
+    <main class="workspace" aria-label="MAC 匹配结果">
+      <header class="workspace-header">
+        <div class="workspace-heading">
+          <div class="heading-line">
+            <h2>匹配结果</h2>
+            <span id="resultCount" class="count-badge">0</span>
+          </div>
+          <p id="resultSummary">输入 MAC 后四位开始定位设备。</p>
+        </div>
+        <div class="workspace-actions">
+          <button id="copyButton" class="secondary-button" type="button" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="8" y="8" width="12" height="12" rx="2"></rect>
+              <path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"></path>
+            </svg>
+            <span>复制 MAC</span>
+          </button>
+          <button
+            id="clearButton"
+            class="icon-button workspace-icon-button"
+            type="button"
+            aria-label="清空结果"
+            data-tooltip="清空当前结果"
+            disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M4 7h16"></path>
+              <path d="M9 7V4h6v3"></path>
+              <path d="M6.5 7 7.4 20h9.2l.9-13"></path>
+              <path d="M10 11v5"></path>
+              <path d="M14 11v5"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="results-surface" aria-label="结果表格">
+        <div id="tableWrap" class="table-wrap" hidden>
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th scope="col">网卡</th>
+                <th scope="col">扫描范围</th>
+                <th scope="col">IP 地址</th>
+                <th scope="col">MAC 地址</th>
+                <th scope="col">状态</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+          </table>
+        </div>
+
+        <div id="emptyState" class="empty-state">
+          <div class="empty-illustration" aria-hidden="true">
+            <svg viewBox="0 0 64 64" focusable="false">
+              <circle cx="32" cy="32" r="8"></circle>
+              <path d="M20 20a17 17 0 0 0 0 24"></path>
+              <path d="M44 20a17 17 0 0 1 0 24"></path>
+              <path d="M12 12a28 28 0 0 0 0 40"></path>
+              <path d="M52 12a28 28 0 0 1 0 40"></path>
+            </svg>
+          </div>
+          <h3 id="emptyTitle">等待扫描</h3>
+          <p id="emptyMessage">匹配到的设备会显示在这里。</p>
+          <button id="emptyRefreshButton" class="text-button" type="button">重新识别网段</button>
+        </div>
+      </section>
+
+      <footer class="workspace-footer">
+        <div class="selected-summary">
+          <span class="selection-dot" aria-hidden="true"></span>
+          <span id="selectionText">未选择设备</span>
+        </div>
+        <span id="scanFooterMeta" class="scan-footer-meta">等待网络扫描</span>
+      </footer>
+    </main>
+  </div>
+
+  <div id="glassTooltip" class="glass-tooltip" role="tooltip" hidden>
+    <span id="glassTooltipText"></span>
+  </div>
+  <div id="toastRegion" class="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="./app.js?v=__APP_VERSION__" defer></script>
+</body>
+</html>
