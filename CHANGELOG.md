@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.004 - 2026-10-22
+
+- Move the theme control out of the TOS host title-bar hit area so clicking it
+  always toggles the application theme.
+- Initialize the application theme from the TOS `themeMode` value so the host
+  window controls and application colors use the same light or dark baseline.
+- Add a Copy IP action for the selected device row.
+- Reserve space for the bottom-right resize handle so device counts no longer
+  overlap it.
+- Make the application icon fill its SVG viewBox so navigation and App Center
+  render it at the same visual size as system icons.
+
 ## 1.0.003 - 2026-10-22
 
 - Reserve a wider host-control safe area in the title bar so TOS minimize,

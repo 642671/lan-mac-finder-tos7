@@ -83,6 +83,21 @@ class PackageContractTests(unittest.TestCase):
         root = ET.fromstring(icon.read_bytes())
         self.assertIn("viewBox", root.attrib)
         self.assertIsNone(re.search(r"<script\b", icon.read_text(encoding="utf-8"), re.I))
+        full_bleed = next(
+            element for element in root if element.tag.rsplit("}", 1)[-1] == "rect"
+        )
+        self.assertIn(full_bleed.attrib.get("x", "0"), {"0"})
+        self.assertIn(full_bleed.attrib.get("y", "0"), {"0"})
+        self.assertEqual(full_bleed.attrib.get("width"), "64")
+        self.assertEqual(full_bleed.attrib.get("height"), "64")
+
+    def test_ui_contract(self) -> None:
+        html = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="themeToggle"', html)
+        self.assertIn('id="copyIpButton"', html)
+        self.assertIn("window.parent.localStorage.getItem(\"themeMode\")", html)
+        titlebar = html.split('class="titlebar-actions"', 1)[1].split("</header>", 1)[0]
+        self.assertNotIn('id="themeToggle"', titlebar)
 
 
 if __name__ == "__main__":

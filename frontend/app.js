@@ -32,6 +32,7 @@ var state = {
   tableSignature: "",
   tableMode: "devices",
   selectedMac: "",
+  selectedIp: "",
   selectedKey: "",
   running: false,
   stopping: false,
@@ -419,6 +420,7 @@ function updateControls() {
   var refreshButton = byId("refreshButton");
   var emptyRefreshButton = byId("emptyRefreshButton");
   var copyButton = byId("copyButton");
+  var copyIpButton = byId("copyIpButton");
   var clearButton = byId("clearButton");
   var inputClearButton = byId("inputClearButton");
   var input = byId("macSuffix");
@@ -430,6 +432,7 @@ function updateControls() {
   input.disabled = state.running;
   inputClearButton.hidden = state.running || !input.value.trim();
   copyButton.disabled = !state.selectedMac;
+  copyIpButton.disabled = !state.selectedIp;
   clearButton.disabled = state.tableMode !== "results" || state.results.length === 0;
   setText(
     "scanButtonText",
@@ -471,9 +474,11 @@ function setProgress(percent, indeterminate, label) {
 
 function resetSelection() {
   state.selectedMac = "";
+  state.selectedIp = "";
   state.selectedKey = "";
   setText("selectionText", "未选择设备");
   byId("copyButton").disabled = true;
+  byId("copyIpButton").disabled = true;
   var summary = document.querySelector(".selected-summary");
   if (summary) {
     summary.classList.remove("has-selection");
@@ -487,6 +492,7 @@ function selectRow(row) {
     item.setAttribute("aria-selected", item === row ? "true" : "false");
   });
   state.selectedMac = row.getAttribute("data-mac") || "";
+  state.selectedIp = row.getAttribute("data-ip") || "";
   state.selectedKey = row.getAttribute("data-key") || "";
   setText("selectionText", state.selectedMac ? "已选择 " + state.selectedMac : "未选择设备");
   var summary = document.querySelector(".selected-summary");
@@ -494,6 +500,7 @@ function selectRow(row) {
     summary.classList.toggle("has-selection", !!state.selectedMac);
   }
   byId("copyButton").disabled = !state.selectedMac;
+  byId("copyIpButton").disabled = !state.selectedIp;
 }
 
 function stateClass(value) {
@@ -539,6 +546,7 @@ function renderTable(items, mode, force) {
     row.setAttribute("role", "row");
     row.setAttribute("aria-selected", "false");
     row.setAttribute("data-mac", result.mac);
+    row.setAttribute("data-ip", result.ip);
     row.setAttribute(
       "data-key",
       result.interface + "|" + result.ip + "|" + result.mac
@@ -961,6 +969,19 @@ async function copySelectedMac() {
   }
 }
 
+async function copySelectedIp() {
+  if (!state.selectedIp) {
+    toast("请先选择一条匹配结果。", true);
+    return;
+  }
+  try {
+    await writeClipboard(state.selectedIp);
+    toast("已复制 " + state.selectedIp, false);
+  } catch (error) {
+    toast("复制失败，请重试。", true);
+  }
+}
+
 async function clearResults() {
   if (state.running) {
     return;
@@ -989,11 +1010,14 @@ async function clearResults() {
 
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  try {
-    localStorage.setItem("lan-mac-finder-theme", theme);
-  } catch (error) {
-    return;
-  }
+  var toggle = byId("themeToggle");
+  var isDark = theme === "dark";
+  toggle.setAttribute("aria-pressed", isDark ? "true" : "false");
+  toggle.setAttribute("aria-label", isDark ? "切换为浅色主题" : "切换为深色主题");
+  toggle.setAttribute(
+    "data-tooltip",
+    isDark ? "切换为浅色主题" : "切换为深色主题"
+  );
 }
 
 function toggleTheme() {
@@ -1097,6 +1121,7 @@ function bindEvents() {
   byId("refreshButton").addEventListener("click", refreshNetworks);
   byId("emptyRefreshButton").addEventListener("click", refreshNetworks);
   byId("copyButton").addEventListener("click", copySelectedMac);
+  byId("copyIpButton").addEventListener("click", copySelectedIp);
   byId("clearButton").addEventListener("click", clearResults);
   byId("inputClearButton").addEventListener("click", function () {
     clearResults().then(function () {
@@ -1117,6 +1142,7 @@ function bindEvents() {
 }
 
 async function boot() {
+  applyTheme(document.documentElement.getAttribute("data-theme") || "light");
   bindEvents();
   bindTooltips();
   updateControls();
