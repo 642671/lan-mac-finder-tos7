@@ -42,6 +42,58 @@ NETWORKS = [
     },
 ]
 
+DEVICES = [
+    {
+        "interface": "enp1s0",
+        "scan_range": "192.0.2.0/24",
+        "ip": "192.0.2.1",
+        "mac": "02-42-AC-11-00-01",
+        "state": "REACHABLE",
+    },
+    {
+        "interface": "enp1s0",
+        "scan_range": "192.0.2.0/24",
+        "ip": "192.0.2.25",
+        "mac": "02-42-AC-11-00-19",
+        "state": "REACHABLE",
+    },
+    {
+        "interface": "enp1s0",
+        "scan_range": "192.0.2.0/24",
+        "ip": "192.0.2.44",
+        "mac": "02-42-AC-11-2C-00",
+        "state": "STALE",
+    },
+    {
+        "interface": "enp1s0",
+        "scan_range": "192.0.2.0/24",
+        "ip": "192.0.2.88",
+        "mac": "02-42-AC-11-58-00",
+        "state": "DELAY",
+    },
+    {
+        "interface": "enp2s0",
+        "scan_range": "198.51.100.0/24",
+        "ip": "198.51.100.1",
+        "mac": "02-42-AC-22-00-01",
+        "state": "REACHABLE",
+    },
+    {
+        "interface": "enp2s0",
+        "scan_range": "198.51.100.0/24",
+        "ip": "198.51.100.40",
+        "mac": "02-42-AC-22-00-28",
+        "state": "REACHABLE",
+    },
+    {
+        "interface": "enp2s0",
+        "scan_range": "198.51.100.0/24",
+        "ip": "198.51.100.126",
+        "mac": "02-42-AC-22-7E-00",
+        "state": "STALE",
+    },
+]
+
 
 class PreviewState:
     def __init__(self) -> None:
@@ -128,7 +180,6 @@ class PreviewState:
                     self.data["current_interface"] = "enp2s0"
                     self.data["current_range"] = "198.51.100.0/24"
         first_mac = f"02-42-AC-11-{suffix[:2]}-{suffix[2:]}"
-        second_mac = f"02-42-AC-22-{suffix[:2]}-{suffix[2:]}"
         with self.lock:
             self.data["results"] = [
                 {
@@ -137,13 +188,6 @@ class PreviewState:
                     "ip": "192.0.2.88",
                     "mac": first_mac,
                     "state": "REACHABLE",
-                },
-                {
-                    "interface": "enp2s0",
-                    "scan_range": "198.51.100.0/24",
-                    "ip": "198.51.100.126",
-                    "mac": second_mac,
-                    "state": "STALE",
                 },
             ]
         self._finish("completed")
@@ -208,7 +252,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                     "ok": True,
                     "status": "ok",
                     "app": APP_ID,
-                    "version": "1.0.001-preview",
+                    "version": "1.0.002-preview",
                     "python": "preview",
                     "max_hosts": 1022,
                 },
@@ -220,10 +264,22 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.001-preview",
+                    "version": "1.0.002-preview",
                     "max_hosts": 1022,
                     "networks": NETWORKS,
                     "warnings": ["预览模式：docker0 已作为虚拟网卡跳过"],
+                },
+            )
+            return
+        if parts == ["devices"]:
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "app": APP_ID,
+                    "version": "1.0.002-preview",
+                    "devices": DEVICES,
+                    "warnings": [],
                 },
             )
             return
@@ -233,7 +289,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.001-preview",
+                    "version": "1.0.002-preview",
                     **STATE.status(),
                 },
             )
@@ -243,7 +299,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             return
         if urlsplit(self.path).path in {"", "/"}:
             source = (FRONTEND / "index.html").read_text(encoding="utf-8")
-            raw = source.replace("__APP_VERSION__", "1.0.001-preview").encode("utf-8")
+            raw = source.replace("__APP_VERSION__", "1.0.002-preview").encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(raw)))

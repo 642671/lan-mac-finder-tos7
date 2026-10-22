@@ -27,8 +27,10 @@ var activeTooltipTarget = null;
 var state = {
   networks: [],
   warnings: [],
+  devices: [],
   results: [],
-  resultSignature: "",
+  tableSignature: "",
+  tableMode: "devices",
   selectedMac: "",
   selectedKey: "",
   running: false,
@@ -425,7 +427,7 @@ function updateControls() {
   emptyRefreshButton.disabled = state.running;
   input.disabled = state.running;
   copyButton.disabled = !state.selectedMac;
-  clearButton.disabled = state.results.length === 0;
+  clearButton.disabled = state.tableMode !== "results" || state.results.length === 0;
   setText(
     "scanButtonText",
     state.running ? (state.stopping ? "停止中" : "扫描中") : "开始扫描"
@@ -502,21 +504,30 @@ function stateClass(value) {
   return "";
 }
 
-function renderResults(results, force) {
-  var safeResults = Array.isArray(results) ? results : [];
-  var signature = JSON.stringify(safeResults);
-  if (!force && signature === state.resultSignature) {
+function visibleTableRows() {
+  return state.tableMode === "results" ? state.results : state.devices;
+}
+
+function renderTable(items, mode, force) {
+  var safeItems = Array.isArray(items) ? items : [];
+  var signature = mode + ":" + JSON.stringify(safeItems);
+  if (!force && signature === state.tableSignature) {
     return;
   }
-  state.resultSignature = signature;
-  state.results = safeResults;
+  state.tableSignature = signature;
+  state.tableMode = mode;
+  if (mode === "results") {
+    state.results = safeItems;
+  } else {
+    state.devices = safeItems;
+  }
   resetSelection();
 
   var body = byId("resultsBody");
   while (body.firstChild) {
     body.removeChild(body.firstChild);
   }
-  safeResults.forEach(function (result) {
+  safeItems.forEach(function (result) {
     var row = document.createElement("tr");
     row.tabIndex = 0;
     row.setAttribute("role", "row");
@@ -566,13 +577,31 @@ function renderResults(results, force) {
     body.appendChild(row);
   });
 
-  setText("resultCount", safeResults.length);
-  setHidden("tableWrap", safeResults.length === 0);
-  setHidden("emptyState", safeResults.length > 0);
+  setText("tableHeading", mode === "results" ? "匹配结果" : "设备总表");
+  setText("resultCount", safeItems.length);
+  setHidden("tableWrap", safeItems.length === 0);
+  setHidden("emptyState", safeItems.length > 0);
+  setText(
+    "emptyRefreshButton",
+    mode === "results" ? "重新识别网段" : "刷新设备总表"
+  );
   updateControls();
 }
 
+function renderResults(results, force) {
+  renderTable(results, "results", force);
+}
+
+function renderDevices(devices, force) {
+  renderTable(devices, "devices", force);
+}
+
 function renderEmptyForStatus(status) {
+  if (state.tableMode === "devices") {
+    setText("emptyTitle", "暂无设备记录");
+    setText("emptyMessage", "当前邻居表中没有可显示的设备，刷新后再试。");
+    return;
+  }
   if (status === "running") {
     setText("emptyTitle", "正在扫描");
     setText("emptyMessage", "网段探测和邻居表读取正在后台进行。");
@@ -623,7 +652,9 @@ function renderScanStatus(data, notifyTerminal) {
   state.probedHosts = Number(data.probed_hosts) || 0;
   state.jobId = data.job_id || state.jobId;
 
-  renderResults(data.results || [], false);
+  if (data.job_id || state.tableMode === "results") {
+    renderResults(data.results || [], false);
+  }
   updateControls();
 
   var percent = Number(data.progress_percent) || 0;
@@ -697,15 +728,16 @@ function renderScanStatus(data, notifyTerminal) {
         state.networks.length + " 个物理网段可用于扫描。"
       );
     }
-    if (!state.results.length) {
+    if (state.tableMode === "results" && !state.results.length) {
       setText("resultSummary", "输入 MAC 后四位开始定位设备。");
     }
   }
 
   renderEmptyForStatus(state.running ? "running" : state.scanStatus);
-  setText("resultCount", state.results.length);
-  setHidden("tableWrap", state.results.length === 0);
-  setHidden("emptyState", state.results.length > 0);
+  var visibleRows = visibleTableRows();
+  setText("resultCount", visibleRows.length);
+  setHidden("tableWrap", visibleRows.length === 0);
+  setHidden("emptyState", visibleRows.length > 0);
 
   if (data.started_at || data.finished_at) {
     setText(
@@ -720,7 +752,7 @@ function renderScanStatus(data, notifyTerminal) {
         ? "已探测 " + state.probedHosts + " / " + state.totalHosts
         : "共探测 " + state.totalHosts + " 台主机"
     );
-  } else {
+  } else if (state.tableMode === "results") {
     setText("scanFooterMeta", "等待网络扫描");
   }
 
@@ -749,6 +781,9 @@ async function refreshNetworks() {
   try {
     var data = await apiRequest("networks", null);
     setNetworks(data);
+    if (state.tableMode === "devices") {
+      await refreshDevices(false);
+    }
     if (state.scanStatus === "idle") {
       setScanState(
         "idle",
@@ -772,8 +807,33 @@ async function refreshNetworks() {
   }
 }
 
+async function refreshDevices(showError) {
+  try {
+    var data = await apiRequest("devices", null);
+    state.devices = Array.isArray(data.devices) ? data.devices : [];
+    if (Array.isArray(data.warnings) && data.warnings.length) {
+      state.warnings = Array.from(new Set(state.warnings.concat(data.warnings)));
+      renderWarnings();
+    }
+    renderDevices(state.devices, true);
+    setText(
+      "resultSummary",
+      state.devices.length
+        ? "当前邻居表中共有 " + state.devices.length + " 台已知设备。"
+        : "当前邻居表中暂无已知设备。"
+    );
+    setText("scanFooterMeta", "已知设备 " + state.devices.length + " 台");
+    renderEmptyForStatus("idle");
+    return true;
+  } catch (error) {
+    if (showError) {
+      toast(describeError(error), true);
+    }
+    return false;
+  }
+}
+
 function clearResultsForNewScan() {
-  state.resultSignature = "";
   renderResults([], true);
   setText("resultSummary", "正在启动扫描。");
 }
@@ -890,21 +950,27 @@ async function copySelectedMac() {
   }
 }
 
-function clearResults() {
+async function clearResults() {
   if (state.running) {
     return;
   }
   state.scanStatus = "idle";
-  renderResults([], true);
-  setText("resultSummary", "输入 MAC 后四位开始定位设备。");
-  setText("emptyTitle", "等待扫描");
-  setText("emptyMessage", "匹配到的设备会显示在这里。");
-  setText("scanFooterMeta", "等待网络扫描");
+  state.activeSuffix = "";
+  state.results = [];
+  renderDevices(state.devices, true);
+  setText(
+    "resultSummary",
+    state.devices.length
+      ? "当前邻居表中共有 " + state.devices.length + " 台已知设备。"
+      : "当前邻居表中暂无已知设备。"
+  );
+  setText("scanFooterMeta", "已知设备 " + state.devices.length + " 台");
   setScanState(
     "idle",
     "准备就绪",
     state.networks.length + " 个物理网段可用于扫描。"
   );
+  await refreshNetworks();
 }
 
 function applyTheme(theme) {

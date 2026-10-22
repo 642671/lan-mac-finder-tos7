@@ -500,6 +500,51 @@ def _sort_results(results: Iterable[dict]) -> list[dict]:
     return sorted(results, key=key)
 
 
+def collect_neighbor_devices(
+    targets: Iterable[NetworkTarget],
+    neighbors: Callable[[str], list[NeighborRecord]] = read_neighbors,
+) -> tuple[list[dict], list[str]]:
+    """Return every known neighbor that belongs to a scannable routed network."""
+
+    warnings: list[str] = []
+    records_by_interface: dict[str, list[NeighborRecord]] = {}
+    devices: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for target in targets:
+        interface = target.interface
+        if interface not in records_by_interface:
+            try:
+                records_by_interface[interface] = neighbors(interface)
+            except (CommandError, OSError) as exc:
+                records_by_interface[interface] = []
+                warnings.append(f"{interface} 邻居表读取失败：{exc}")
+
+        network = parse_ipv4_network(target.local_ip, target.prefix_length)
+        for record in records_by_interface[interface]:
+            try:
+                address = ipaddress.ip_address(record.ip)
+            except ValueError:
+                continue
+            if not isinstance(address, ipaddress.IPv4Address) or address not in network:
+                continue
+            key = (record.interface, record.ip, record.mac)
+            if key in seen:
+                continue
+            seen.add(key)
+            devices.append(
+                {
+                    "interface": record.interface,
+                    "scan_range": target.scan_range,
+                    "ip": record.ip,
+                    "mac": record.mac,
+                    "state": record.state,
+                }
+            )
+
+    return _sort_results(devices), warnings
+
+
 class ScanManager:
     """Run one scan at a time and expose polling-friendly state."""
 

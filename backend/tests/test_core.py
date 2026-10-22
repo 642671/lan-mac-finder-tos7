@@ -16,6 +16,7 @@ from lan_mac_finder.core import (  # noqa: E402
     NeighborRecord,
     ScanCancelled,
     ScanManager,
+    collect_neighbor_devices,
     discover_networks,
     is_virtual_interface,
     match_neighbor_records,
@@ -176,6 +177,42 @@ class NeighborTests(unittest.TestCase):
         matches = match_neighbor_records(records, "45:6a", "192.0.2.0/24")
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["ip"], "192.0.2.10")
+
+    def test_collect_all_known_devices_for_network(self) -> None:
+        target = NetworkTarget(
+            interface="enp1s0",
+            alias="enp1s0",
+            local_ip="192.0.2.25",
+            prefix_length=24,
+            gateway="192.0.2.1",
+            network="192.0.2.0",
+            broadcast="192.0.2.255",
+            scan_range="192.0.2.0/24",
+            host_count=254,
+            local_source="192.0.2.25",
+        )
+        records = [
+            NeighborRecord(
+                "enp1s0",
+                "192.0.2.10",
+                "02-42-AC-11-45-6A",
+                "REACHABLE",
+            ),
+            NeighborRecord(
+                "enp1s0",
+                "198.51.100.20",
+                "02-42-AC-22-45-6A",
+                "STALE",
+            ),
+        ]
+        devices, warnings = collect_neighbor_devices(
+            [target],
+            neighbors=lambda interface: records,
+        )
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0]["ip"], "192.0.2.10")
+        self.assertEqual(devices[0]["scan_range"], "192.0.2.0/24")
 
 
 class ScanManagerTests(unittest.TestCase):

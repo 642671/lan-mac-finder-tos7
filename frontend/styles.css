@@ -479,11 +479,11 @@ html[data-theme="dark"] .theme-icon-dark {
 .app-shell {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-  gap: 14px;
+  gap: 0;
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 14px;
+  padding: 0;
   overflow: hidden;
 }
 
@@ -491,10 +491,10 @@ html[data-theme="dark"] .theme-icon-dark {
 .workspace {
   min-width: 0;
   min-height: 0;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: 0;
   background: var(--glass);
-  box-shadow: var(--shadow-glass);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
   backdrop-filter: blur(28px) saturate(150%);
   -webkit-backdrop-filter: blur(28px) saturate(150%);
 }
@@ -503,6 +503,7 @@ html[data-theme="dark"] .theme-icon-dark {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-right: 1px solid var(--line);
 }
 
 .control-section {
@@ -614,7 +615,6 @@ html[data-theme="dark"] .theme-icon-dark {
   color: var(--text);
   font-size: 16px;
   font-weight: 700;
-  text-transform: uppercase;
 }
 
 .input-shell input::placeholder {
@@ -893,8 +893,8 @@ html[data-theme="dark"] .theme-icon-dark {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  min-height: 78px;
-  padding: 16px 20px;
+  min-height: 64px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -957,12 +957,12 @@ html[data-theme="dark"] .theme-icon-dark {
   display: flex;
   min-height: 0;
   flex: 1 1 auto;
-  margin: 14px 14px 0;
+  margin: 0;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--glass-strong);
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  border: 0;
+  border-radius: 0;
+  background: var(--glass-soft);
+  box-shadow: none;
 }
 
 .table-wrap {
@@ -1133,8 +1133,8 @@ html[data-theme="dark"] .theme-icon-dark {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  min-height: 42px;
-  padding: 0 20px;
+  min-height: 38px;
+  padding: 0 14px;
   color: var(--muted);
   font-size: 10px;
 }
@@ -1302,8 +1302,8 @@ html[data-theme="dark"] .theme-icon-dark {
   }
 
   .app-shell {
-    gap: 10px;
-    padding: 10px;
+    gap: 0;
+    padding: 0;
   }
 
   .control-section {
@@ -1315,11 +1315,11 @@ html[data-theme="dark"] .theme-icon-dark {
   }
 
   .workspace-header {
-    padding: 14px 16px;
+    padding: 0 12px;
   }
 
   .results-surface {
-    margin: 10px 10px 0;
+    margin: 0;
   }
 
   .results-table {
@@ -1372,7 +1372,7 @@ html[data-theme="dark"] .theme-icon-dark {
   }
 
   .workspace-header {
-    min-height: 68px;
+    min-height: 58px;
   }
 }
 

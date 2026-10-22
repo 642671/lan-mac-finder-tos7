@@ -1,19 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LAN MAC Finder">
   <defs>
-    <linearGradient id="bg" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0f766e"/>
-      <stop offset="1" stop-color="#1d4ed8"/>
+    <linearGradient id="bg" x1="7" y1="6" x2="57" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#087f7a"/>
+      <stop offset=".58" stop-color="#0d6f8b"/>
+      <stop offset="1" stop-color="#174ea6"/>
     </linearGradient>
-    <linearGradient id="shine" x1="15" y1="12" x2="44" y2="41" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffffff" stop-opacity=".96"/>
-      <stop offset="1" stop-color="#d7fff8" stop-opacity=".58"/>
+    <linearGradient id="shine" x1="12" y1="9" x2="45" y2="47" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity=".98"/>
+      <stop offset="1" stop-color="#d9fff8" stop-opacity=".8"/>
     </linearGradient>
   </defs>
   <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
-  <rect x="5.5" y="5.5" width="53" height="53" rx="12.5" fill="none" stroke="#ffffff" stroke-opacity=".3"/>
-  <circle cx="32" cy="31" r="5.5" fill="none" stroke="url(#shine)" stroke-width="3"/>
-  <path d="M20 19a18 18 0 0 0 0 24M44 19a18 18 0 0 1 0 24" fill="none" stroke="url(#shine)" stroke-width="3" stroke-linecap="round"/>
-  <path d="M13 12a27 27 0 0 0 0 38M51 12a27 27 0 0 1 0 38" fill="none" stroke="#ffffff" stroke-opacity=".56" stroke-width="2.5" stroke-linecap="round"/>
-  <circle cx="46" cy="46" r="8" fill="#e5fffa" fill-opacity=".94"/>
-  <path d="M42.5 46h7M46 42.5v7" stroke="#0b6b64" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M14 14c8-6 19-7 29-2" fill="none" stroke="#ffffff" stroke-opacity=".2" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="27" cy="27" r="15" fill="#ffffff" fill-opacity=".06" stroke="url(#shine)" stroke-width="4.5"/>
+  <path d="m38.5 38.5 10.8 10.8" fill="none" stroke="url(#shine)" stroke-width="5.5" stroke-linecap="round"/>
+  <circle cx="27" cy="27" r="3" fill="#ffffff"/>
+  <circle cx="20" cy="20.5" r="2.4" fill="#dffff9"/>
+  <circle cx="34" cy="20.5" r="2.4" fill="#dffff9"/>
+  <circle cx="27" cy="34" r="2.4" fill="#dffff9"/>
+  <path d="m22 22 3 3M32 22l-3 3M27 30v2" fill="none" stroke="#ffffff" stroke-opacity=".82" stroke-width="2" stroke-linecap="round"/>
 </svg>

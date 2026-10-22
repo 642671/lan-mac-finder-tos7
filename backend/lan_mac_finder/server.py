@@ -17,6 +17,7 @@ from . import __version__
 from .core import (
     APP_ID,
     ScanManager,
+    collect_neighbor_devices,
     discover_networks,
     max_configured_hosts,
     normalize_mac_suffix,
@@ -153,6 +154,7 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
                         "capabilities": [
                             "health",
                             "networks",
+                            "devices",
                             "scan/start",
                             "scan/status",
                             "scan/stop",
@@ -179,6 +181,23 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
                         "max_hosts": max_configured_hosts(),
                         "networks": [target.as_dict() for target in targets],
                         "warnings": warnings,
+                    },
+                    head_only=head_only,
+                )
+                return
+            if parts == ["devices"]:
+                if method not in {"GET", "HEAD"}:
+                    raise ApiError(405, "method not allowed")
+                targets, warnings = discover_networks()
+                devices, neighbor_warnings = collect_neighbor_devices(targets)
+                self._send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "app": APP_ID,
+                        "version": __version__,
+                        "devices": devices,
+                        "warnings": warnings + neighbor_warnings,
                     },
                     head_only=head_only,
                 )
