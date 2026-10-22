@@ -36,6 +36,7 @@ var state = {
   running: false,
   stopping: false,
   activeSuffix: "",
+  normalizedSuffix: "",
   scanStatus: "idle",
   totalHosts: 0,
   probedHosts: 0,
@@ -419,6 +420,7 @@ function updateControls() {
   var emptyRefreshButton = byId("emptyRefreshButton");
   var copyButton = byId("copyButton");
   var clearButton = byId("clearButton");
+  var inputClearButton = byId("inputClearButton");
   var input = byId("macSuffix");
 
   scanButton.disabled = state.running || state.networks.length === 0;
@@ -426,6 +428,7 @@ function updateControls() {
   refreshButton.disabled = state.running;
   emptyRefreshButton.disabled = state.running;
   input.disabled = state.running;
+  inputClearButton.hidden = state.running || !input.value.trim();
   copyButton.disabled = !state.selectedMac;
   clearButton.disabled = state.tableMode !== "results" || state.results.length === 0;
   setText(
@@ -501,6 +504,9 @@ function stateClass(value) {
   if (normalized === "stale" || normalized === "delay" || normalized === "probe") {
     return "is-stale";
   }
+  if (normalized === "local") {
+    return "is-local";
+  }
   return "";
 }
 
@@ -552,7 +558,7 @@ function renderTable(items, mode, force) {
     var stateCell = document.createElement("td");
     var chip = document.createElement("span");
     chip.className = "state-chip " + stateClass(result.state);
-    chip.textContent = result.state;
+    chip.textContent = result.state === "LOCAL" ? "本机" : result.state;
     stateCell.appendChild(chip);
 
     row.appendChild(interfaceCell);
@@ -647,7 +653,10 @@ function renderScanStatus(data, notifyTerminal) {
   state.running = !!data.running;
   state.stopping = !!data.stopping;
   state.scanStatus = data.status || "idle";
-  state.activeSuffix = data.suffix || state.activeSuffix;
+  state.normalizedSuffix = data.suffix || state.normalizedSuffix;
+  if (!state.activeSuffix && data.suffix) {
+    state.activeSuffix = data.suffix;
+  }
   state.totalHosts = Number(data.total_hosts) || 0;
   state.probedHosts = Number(data.probed_hosts) || 0;
   state.jobId = data.job_id || state.jobId;
@@ -866,6 +875,7 @@ async function startScan() {
   if (state.running) {
     return;
   }
+  var displaySuffix = byId("macSuffix").value.trim();
   var suffix = validateInput(true);
   if (!suffix) {
     showInputError();
@@ -878,7 +888,8 @@ async function startScan() {
 
   state.running = true;
   state.stopping = false;
-  state.activeSuffix = suffix;
+  state.activeSuffix = displaySuffix;
+  state.normalizedSuffix = suffix;
   state.scanStatus = "discovering";
   clearResultsForNewScan();
   setProgress(0, true, "正在启动扫描");
@@ -956,6 +967,9 @@ async function clearResults() {
   }
   state.scanStatus = "idle";
   state.activeSuffix = "";
+  state.normalizedSuffix = "";
+  byId("macSuffix").value = "";
+  validateInput(false);
   state.results = [];
   renderDevices(state.devices, true);
   setText(
@@ -1069,6 +1083,10 @@ function bindEvents() {
   });
   input.addEventListener("input", function () {
     validateInput(true);
+    byId("inputClearButton").hidden = state.running || !input.value.trim();
+    if (!input.value.trim() && state.tableMode === "results" && !state.running) {
+      clearResults();
+    }
   });
 
   byId("scanForm").addEventListener("submit", function (event) {
@@ -1080,6 +1098,11 @@ function bindEvents() {
   byId("emptyRefreshButton").addEventListener("click", refreshNetworks);
   byId("copyButton").addEventListener("click", copySelectedMac);
   byId("clearButton").addEventListener("click", clearResults);
+  byId("inputClearButton").addEventListener("click", function () {
+    clearResults().then(function () {
+      input.focus();
+    });
+  });
   byId("themeToggle").addEventListener("click", toggleTheme);
 
   document.addEventListener("keydown", function (event) {

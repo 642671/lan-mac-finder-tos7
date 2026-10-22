@@ -96,6 +96,7 @@ html {
 body {
   overflow: hidden;
   padding-top: var(--titlebar-height);
+  border-radius: var(--radius);
   background:
     linear-gradient(
       124deg,
@@ -199,7 +200,7 @@ svg {
   z-index: 10000;
   width: 20px;
   height: 20px;
-  background: var(--page-bg);
+  background: transparent;
   pointer-events: none;
 }
 
@@ -213,12 +214,14 @@ svg {
   align-items: center;
   gap: 16px;
   height: var(--titlebar-height);
-  padding: 0 136px 0 18px;
+  padding: 0 190px 0 18px;
   border-bottom: 1px solid var(--line);
   background: rgba(246, 251, 249, 0.66);
   box-shadow: inset 0 1px 0 var(--glass-highlight);
   color: var(--text);
   pointer-events: none;
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
   backdrop-filter: blur(24px) saturate(145%);
   -webkit-backdrop-filter: blur(24px) saturate(145%);
 }
@@ -485,6 +488,8 @@ html[data-theme="dark"] .theme-icon-dark {
   min-height: 0;
   padding: 0;
   overflow: hidden;
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
 }
 
 .sidebar,
@@ -596,7 +601,7 @@ html[data-theme="dark"] .theme-icon-dark {
   box-shadow: 0 0 0 3px var(--danger-soft);
 }
 
-.input-shell svg {
+.input-shell > svg {
   width: 18px;
   height: 18px;
   margin-left: 12px;
@@ -624,6 +629,31 @@ html[data-theme="dark"] .theme-icon-dark {
 
 .input-shell input:disabled {
   opacity: 0.62;
+}
+
+.input-clear-button {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  margin-right: 6px;
+  padding: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.input-clear-button:hover {
+  background: var(--glass-hover);
+  color: var(--text);
+}
+
+.input-clear-button svg {
+  width: 15px;
+  height: 15px;
 }
 
 .input-hint,
@@ -1078,6 +1108,12 @@ html[data-theme="dark"] .theme-icon-dark {
   color: var(--warning);
 }
 
+.state-chip.is-local {
+  border-color: rgba(37, 99, 166, 0.2);
+  background: var(--info-soft);
+  color: var(--info);
+}
+
 .empty-state {
   display: flex;
   width: 100%;
@@ -1134,7 +1170,7 @@ html[data-theme="dark"] .theme-icon-dark {
   justify-content: space-between;
   gap: 18px;
   min-height: 38px;
-  padding: 0 14px;
+  padding: 0 3px 0 14px;
   color: var(--muted);
   font-size: 10px;
 }

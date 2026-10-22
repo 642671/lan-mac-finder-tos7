@@ -27,6 +27,7 @@ NETWORKS = [
         "scan_range": "192.0.2.0/24",
         "host_count": 254,
         "local_source": "192.0.2.25",
+        "local_mac": "02-42-AC-11-00-19",
     },
     {
         "interface": "enp2s0",
@@ -39,6 +40,7 @@ NETWORKS = [
         "scan_range": "198.51.100.0/24",
         "host_count": 254,
         "local_source": "198.51.100.40",
+        "local_mac": "02-42-AC-22-00-28",
     },
 ]
 
@@ -55,7 +57,7 @@ DEVICES = [
         "scan_range": "192.0.2.0/24",
         "ip": "192.0.2.25",
         "mac": "02-42-AC-11-00-19",
-        "state": "REACHABLE",
+        "state": "LOCAL",
     },
     {
         "interface": "enp1s0",
@@ -83,7 +85,7 @@ DEVICES = [
         "scan_range": "198.51.100.0/24",
         "ip": "198.51.100.40",
         "mac": "02-42-AC-22-00-28",
-        "state": "REACHABLE",
+        "state": "LOCAL",
     },
     {
         "interface": "enp2s0",
@@ -187,7 +189,7 @@ class PreviewState:
                     "scan_range": "192.0.2.0/24",
                     "ip": "192.0.2.88",
                     "mac": first_mac,
-                    "state": "REACHABLE",
+                    "state": "LOCAL",
                 },
             ]
         self._finish("completed")
@@ -252,7 +254,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                     "ok": True,
                     "status": "ok",
                     "app": APP_ID,
-                    "version": "1.0.002-preview",
+                    "version": "1.0.003-preview",
                     "python": "preview",
                     "max_hosts": 1022,
                 },
@@ -264,7 +266,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.002-preview",
+                    "version": "1.0.003-preview",
                     "max_hosts": 1022,
                     "networks": NETWORKS,
                     "warnings": ["预览模式：docker0 已作为虚拟网卡跳过"],
@@ -277,7 +279,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.002-preview",
+                    "version": "1.0.003-preview",
                     "devices": DEVICES,
                     "warnings": [],
                 },
@@ -289,7 +291,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.002-preview",
+                    "version": "1.0.003-preview",
                     **STATE.status(),
                 },
             )
@@ -299,7 +301,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             return
         if urlsplit(self.path).path in {"", "/"}:
             source = (FRONTEND / "index.html").read_text(encoding="utf-8")
-            raw = source.replace("__APP_VERSION__", "1.0.002-preview").encode("utf-8")
+            raw = source.replace("__APP_VERSION__", "1.0.003-preview").encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(raw)))

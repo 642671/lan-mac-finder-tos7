@@ -102,6 +102,18 @@
               autocomplete="off"
               autocapitalize="none"
               aria-describedby="inputHint inputError">
+            <button
+              id="inputClearButton"
+              class="input-clear-button"
+              type="button"
+              aria-label="清除搜索"
+              data-tooltip="清除搜索并恢复设备总表"
+              hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M6 6 18 18"></path>
+                <path d="M18 6 6 18"></path>
+              </svg>
+            </button>
           </div>
           <p id="inputHint" class="input-hint">AA-BB / AA:BB / AABB</p>
           <p id="inputError" class="field-error" role="alert" hidden></p>

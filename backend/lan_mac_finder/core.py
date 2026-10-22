@@ -65,6 +65,7 @@ class NetworkTarget:
     scan_range: str
     host_count: int
     local_source: str
+    local_mac: str
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -190,8 +191,13 @@ def discover_networks(
         runner([command, "-j", "-4", "addr", "show"]),
         "ip addr",
     )
+    links = _json_items(
+        runner([command, "-j", "link", "show"]),
+        "ip link",
+    )
 
     by_interface: dict[str, list[dict]] = {}
+    interface_macs: dict[str, str] = {}
     for entry in addresses:
         name = str(entry.get("ifname") or "")
         inet_items = [
@@ -204,6 +210,11 @@ def discover_networks(
         ]
         if name and inet_items:
             by_interface[name] = inet_items
+    for entry in links:
+        name = str(entry.get("ifname") or "")
+        mac = normalize_mac(str(entry.get("address") or ""))
+        if name and mac:
+            interface_macs[name] = mac
 
     warnings: list[str] = []
     skipped_virtual: set[str] = set()
@@ -258,6 +269,7 @@ def discover_networks(
                 scan_range=str(network),
                 host_count=len(hosts),
                 local_source=str(address.get("local") or ""),
+                local_mac=interface_macs.get(interface, ""),
             )
             targets.append(target)
 
@@ -512,6 +524,20 @@ def collect_neighbor_devices(
     seen: set[tuple[str, str, str]] = set()
 
     for target in targets:
+        local_mac = normalize_mac(target.local_mac)
+        if local_mac:
+            local_key = (target.interface, target.local_ip, local_mac)
+            if local_key not in seen:
+                seen.add(local_key)
+                devices.append(
+                    {
+                        "interface": target.interface,
+                        "scan_range": target.scan_range,
+                        "ip": target.local_ip,
+                        "mac": local_mac,
+                        "state": "LOCAL",
+                    }
+                )
         interface = target.interface
         if interface not in records_by_interface:
             try:
@@ -543,6 +569,24 @@ def collect_neighbor_devices(
             )
 
     return _sort_results(devices), warnings
+
+
+def match_local_target(target: NetworkTarget, suffix: str) -> list[dict]:
+    normalized = normalize_mac_suffix(suffix)
+    local_mac = normalize_mac(target.local_mac)
+    if normalized is None or local_mac is None:
+        return []
+    if not local_mac.replace("-", "").endswith(normalized):
+        return []
+    return [
+        {
+            "interface": target.interface,
+            "scan_range": target.scan_range,
+            "ip": target.local_ip,
+            "mac": local_mac,
+            "state": "LOCAL",
+        }
+    ]
 
 
 class ScanManager:
@@ -695,6 +739,7 @@ class ScanManager:
                     cancel_event,
                     on_progress,
                 )
+                self._append_results(match_local_target(target, suffix))
                 records = self._neighbors(target.interface)
                 self._append_results(
                     match_neighbor_records(records, suffix, target.scan_range)

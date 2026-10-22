@@ -19,6 +19,7 @@ from lan_mac_finder.core import (  # noqa: E402
     collect_neighbor_devices,
     discover_networks,
     is_virtual_interface,
+    match_local_target,
     match_neighbor_records,
     network_hosts,
     normalize_mac,
@@ -99,7 +100,11 @@ class NetworkTests(unittest.TestCase):
         def runner(command):
             if "route" in command:
                 return json.dumps(routes)
-            return json.dumps(addresses)
+            if "addr" in command:
+                return json.dumps(addresses)
+            return json.dumps(
+                [{"ifname": "enp1s0", "address": "02:42:ac:11:00:19"}]
+            )
 
         targets, warnings = discover_networks(
             runner=runner,
@@ -110,6 +115,7 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(targets[0].interface, "enp1s0")
         self.assertEqual(targets[0].scan_range, "192.0.2.0/24")
         self.assertEqual(targets[0].gateway, "192.0.2.1")
+        self.assertEqual(targets[0].local_mac, "02-42-AC-11-00-19")
         self.assertEqual(warnings, [])
 
     def test_discover_rejects_oversized_network(self) -> None:
@@ -132,7 +138,11 @@ class NetworkTests(unittest.TestCase):
                 return json.dumps(
                     [{"gateway": "10.20.0.1", "dev": "eth0", "metric": 10}]
                 )
-            return json.dumps(addresses)
+            if "addr" in command:
+                return json.dumps(addresses)
+            return json.dumps(
+                [{"ifname": "eth0", "address": "02:42:ac:14:00:19"}]
+            )
 
         targets, warnings = discover_networks(
             runner=runner,
@@ -190,6 +200,7 @@ class NeighborTests(unittest.TestCase):
             scan_range="192.0.2.0/24",
             host_count=254,
             local_source="192.0.2.25",
+            local_mac="02-42-AC-11-00-19",
         )
         records = [
             NeighborRecord(
@@ -210,9 +221,30 @@ class NeighborTests(unittest.TestCase):
             neighbors=lambda interface: records,
         )
         self.assertEqual(warnings, [])
-        self.assertEqual(len(devices), 1)
+        self.assertEqual(len(devices), 2)
         self.assertEqual(devices[0]["ip"], "192.0.2.10")
         self.assertEqual(devices[0]["scan_range"], "192.0.2.0/24")
+        self.assertEqual(devices[1]["state"], "LOCAL")
+        self.assertEqual(devices[1]["ip"], "192.0.2.25")
+
+    def test_match_local_interface_mac(self) -> None:
+        target = NetworkTarget(
+            interface="eth0",
+            alias="eth0",
+            local_ip="192.0.2.25",
+            prefix_length=24,
+            gateway="192.0.2.1",
+            network="192.0.2.0",
+            broadcast="192.0.2.255",
+            scan_range="192.0.2.0/24",
+            host_count=254,
+            local_source="192.0.2.25",
+            local_mac="02-42-AC-11-D4-65",
+        )
+        matches = match_local_target(target, "d465")
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["state"], "LOCAL")
+        self.assertEqual(matches[0]["mac"], "02-42-AC-11-D4-65")
 
 
 class ScanManagerTests(unittest.TestCase):
@@ -228,6 +260,7 @@ class ScanManagerTests(unittest.TestCase):
             scan_range="192.0.2.0/24",
             host_count=254,
             local_source="192.0.2.25",
+            local_mac="02-42-AC-11-00-19",
         )
 
     def test_scan_manager_collects_matches(self) -> None:
@@ -278,6 +311,32 @@ class ScanManagerTests(unittest.TestCase):
         self.assertTrue(manager.stop())
         manager.wait(2)
         self.assertEqual(manager.status()["status"], "stopped")
+
+    def test_scan_manager_includes_local_interface_mac(self) -> None:
+        target = self._target()
+        target = NetworkTarget(
+            **{
+                **target.as_dict(),
+                "local_mac": "02-42-AC-11-45-6A",
+            }
+        )
+
+        def sweep(_target, _cancel_event, progress):
+            progress(254)
+            return True
+
+        manager = ScanManager(
+            discover=lambda: ([target], []),
+            neighbors=lambda interface: [],
+            sweep=sweep,
+        )
+        self.assertTrue(manager.start("45:6a"))
+        manager.wait(2)
+        status = manager.status()
+        self.assertEqual(status["status"], "completed")
+        self.assertEqual(len(status["results"]), 1)
+        self.assertEqual(status["results"][0]["state"], "LOCAL")
+        self.assertEqual(status["results"][0]["mac"], "02-42-AC-11-45-6A")
 
 
 if __name__ == "__main__":

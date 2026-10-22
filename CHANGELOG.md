@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.003 - 2026-10-22
+
+- Reserve a wider host-control safe area in the title bar so TOS minimize,
+  maximize, and close controls no longer overlap application actions.
+- Make the bottom resize-safe corner transparent and remove the footer's
+  right-side spacing so status data sits against the workspace edge.
+- Clearing the MAC input or pressing the search-reset action now immediately
+  restores the unfiltered device overview.
+- Preserve the user's original suffix casing in scan status messages while
+  continuing to normalize only the matching value.
+- Include each physical interface's own MAC in the device overview and scan
+  results with a distinct `LOCAL` state, fixing searches for the NAS's own MAC.
+
 ## 1.0.002 - 2026-10-22
 
 - Preserve the exact case typed by the user while keeping MAC suffix matching
