@@ -39,6 +39,7 @@ REQUIRED_LANGUAGES = {
 }
 REQUIRED_LANG_FIELDS = {"name", "auth", "descript"}
 MTIME = 1_704_067_200
+ICON_MTIME_EPOCH = 1_792_627_200
 
 
 def read_json(path: Path) -> dict:
@@ -157,6 +158,7 @@ def normalize_lf(path: Path) -> bytes:
 def make_tar_bytes(
     entries: Iterable[tuple[Path, str]],
     content_overrides: Mapping[str, bytes] | None = None,
+    mtime_overrides: Mapping[str, int] | None = None,
 ) -> bytes:
     buffer = io.BytesIO()
     text_suffixes = {
@@ -189,7 +191,11 @@ def make_tar_bytes(
             info.gid = 0
             info.uname = "root"
             info.gname = "root"
-            info.mtime = MTIME
+            info.mtime = (
+                mtime_overrides.get(archive_name, MTIME)
+                if mtime_overrides is not None
+                else MTIME
+            )
             if info.isdir():
                 info.mode = 0o755
                 archive.addfile(info)
@@ -214,8 +220,15 @@ def make_tar_bytes(
     return buffer.getvalue()
 
 
-def make_tar_gz(entries: Iterable[tuple[Path, str]]) -> bytes:
-    return gzip.compress(make_tar_bytes(entries), compresslevel=9, mtime=0)
+def make_tar_gz(
+    entries: Iterable[tuple[Path, str]],
+    mtime_overrides: Mapping[str, int] | None = None,
+) -> bytes:
+    return gzip.compress(
+        make_tar_bytes(entries, mtime_overrides=mtime_overrides),
+        compresslevel=9,
+        mtime=0,
+    )
 
 
 def make_tar_bz2(
@@ -223,9 +236,14 @@ def make_tar_bz2(
     content_overrides: Mapping[str, bytes] | None = None,
 ) -> bytes:
     return bz2.compress(
-        make_tar_bytes(entries, content_overrides),
+        make_tar_bytes(entries, content_overrides=content_overrides),
         compresslevel=9,
     )
+
+
+def release_icon_mtime(version: str) -> int:
+    version_offset = int("".join(re.findall(r"\d+", version)) or "0")
+    return ICON_MTIME_EPOCH + version_offset
 
 
 def write_ar(path: Path, members: list[tuple[str, bytes]]) -> None:
@@ -323,6 +341,9 @@ def verify_package(path: Path, platform: str, version: str) -> None:
         entry = data.getmember(f"./usr/local/{APP_ID}/bin/{APP_ID}-service")
         if not entry.mode & 0o111:
             raise SystemExit("backend entry point is not executable")
+        icon = data.getmember(f"./usr/local/{APP_ID}/images/icons/{APP_ID}.svg")
+        if icon.mtime != release_icon_mtime(version):
+            raise SystemExit("icon modification time was not version-busted")
         webui_file = data.extractfile(f"./usr/local/{APP_ID}/webui.bz2")
         if webui_file is None:
             raise SystemExit("webui.bz2 cannot be read")
@@ -445,13 +466,20 @@ def build(platform: str, clean: bool) -> Path:
         (staging / "DEBIAN" / name, f"./{name}")
         for name in ("control", "md5sums", "postinst", "prerm", "postrm")
     ]
+    icon_archive_name = f"./usr/local/{APP_ID}/images/icons/{APP_ID}.svg"
     archive_path = output_dir / f"{APP_ID}_{version}_{platform}.deb"
     write_ar(
         archive_path,
         [
             ("debian-binary", b"2.0\n"),
             ("control.tar.gz", make_tar_gz(control_entries)),
-            ("data.tar.gz", make_tar_gz(data_entries)),
+            (
+                "data.tar.gz",
+                make_tar_gz(
+                    data_entries,
+                    {icon_archive_name: release_icon_mtime(version)},
+                ),
+            ),
         ],
     )
     verify_package(archive_path, platform, version)

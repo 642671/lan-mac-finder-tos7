@@ -3,7 +3,7 @@
 `lan-mac-finder` is a TOS 7 iframe Deb application for finding devices in the
 NAS's current physical LAN by the last four characters of their MAC address.
 
-Current version: `1.0.004`.
+Current version: `1.0.005`.
 
 ## Features
 
@@ -24,6 +24,8 @@ Current version: `1.0.004`.
 - Copy either the selected device's IP or MAC address.
 - Follow the TOS `themeMode` on startup and provide a directly clickable
   application theme toggle.
+- Version-bump the packaged icon mtime so TOS navigation cache-busts updated
+  application artwork.
 - Stop an active scan, refresh interfaces, select a result, and copy its MAC.
 - Liquid-glass light/dark themes, custom tooltips, and TOS-safe window layout.
 
@@ -114,7 +116,7 @@ Generated packages and SHA256 files are written to `dist/`.
 For a test NAS:
 
 ```bash
-sudo dpkg -i lan-mac-finder_1.0.004_x86_64.deb
+sudo dpkg -i lan-mac-finder_1.0.005_x86_64.deb
 systemctl status lanmacfinder-system.service
 curl --unix-socket /var/api/lan-mac-finder.sock http://localhost/health
 ```
@@ -153,8 +155,8 @@ Then run tests, build both architectures, commit, tag, and push:
 
 ```powershell
 git add -A
-git commit -m "release: v1.0.004"
+git commit -m "release: v1.0.005"
 git push origin main
-git tag -a v1.0.004 -m "LAN MAC Finder v1.0.004"
-git push origin v1.0.004
+git tag -a v1.0.005 -m "LAN MAC Finder v1.0.005"
+git push origin v1.0.005
 ```

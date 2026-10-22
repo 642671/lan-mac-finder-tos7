@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.005 - 2026-10-22
+
+- Give the packaged SVG icon a version-derived modification time so TOS
+  navigation cache-busts the URL instead of showing an older icon.
+- Strengthen the liquid-glass visual system with richer background gradients,
+  lower-opacity blurred surfaces, specular borders, and translucent controls.
+- Keep the improved glass treatment readable in both TOS light and dark themes.
+
 ## 1.0.004 - 2026-10-22
 
 - Move the theme control out of the TOS host title-bar hit area so clicking it

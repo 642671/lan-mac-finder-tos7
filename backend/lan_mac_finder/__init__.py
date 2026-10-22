@@ -1,3 +1,3 @@
 """LAN MAC Finder backend package."""
 
-__version__ = "1.0.004"
+__version__ = "1.0.005"
