@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.007 - 2026-10-24
+
+- Actively probe every scannable host when loading or refreshing the device
+  overview instead of showing only the NAS's partially populated neighbor
+  cache.
+- Return the complete probed device inventory through a dedicated endpoint,
+  including the NAS's own physical interface.
+- Serialize inventory scans with suffix searches and disable conflicting
+  controls while the inventory scan is running.
+- Use a longer timeout for full-network inventory scans while retaining the
+  shorter timeout used by interactive search requests.
+
 ## 1.0.006 - 2026-10-24
 
 - Keep incomplete MAC input neutral while the field is focused, while still

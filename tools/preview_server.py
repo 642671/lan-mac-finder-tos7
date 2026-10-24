@@ -259,7 +259,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                     "ok": True,
                     "status": "ok",
                     "app": APP_ID,
-                    "version": "1.0.006-preview",
+                    "version": "1.0.007-preview",
                     "python": "preview",
                     "max_hosts": 1022,
                 },
@@ -271,7 +271,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.006-preview",
+                    "version": "1.0.007-preview",
                     "max_hosts": 1022,
                     "networks": NETWORKS,
                     "warnings": ["预览模式：docker0 已作为虚拟网卡跳过"],
@@ -284,7 +284,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.006-preview",
+                    "version": "1.0.007-preview",
                     "devices": DEVICES,
                     "warnings": [],
                 },
@@ -296,7 +296,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.006-preview",
+                    "version": "1.0.007-preview",
                     **STATE.status(),
                 },
             )
@@ -306,7 +306,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             return
         if urlsplit(self.path).path in {"", "/"}:
             source = (FRONTEND / "index.html").read_text(encoding="utf-8")
-            raw = source.replace("__APP_VERSION__", "1.0.006-preview").encode("utf-8")
+            raw = source.replace("__APP_VERSION__", "1.0.007-preview").encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(raw)))
@@ -319,6 +319,18 @@ class PreviewHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         parts = api_parts(self.path)
         body = self._read_body()
+        if parts == ["devices", "scan"]:
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "app": APP_ID,
+                    "version": "1.0.007-preview",
+                    "devices": DEVICES,
+                    "warnings": [],
+                },
+            )
+            return
         if parts == ["scan", "start"]:
             suffix = str(body.get("suffix") or "").upper()
             if len(suffix) != 4:

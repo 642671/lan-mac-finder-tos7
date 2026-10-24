@@ -1,5 +1,5 @@
 Package: lan-mac-finder
-Version: 1.0.006
+Version: 1.0.007
 Architecture: amd64
 Section: utils
 Priority: optional

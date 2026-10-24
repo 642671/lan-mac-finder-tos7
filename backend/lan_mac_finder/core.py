@@ -571,6 +571,27 @@ def collect_neighbor_devices(
     return _sort_results(devices), warnings
 
 
+def probe_network_devices(
+    targets: Iterable[NetworkTarget],
+    *,
+    sweep: Callable[..., bool] = scan_hosts,
+    neighbors: Callable[[str], list[NeighborRecord]] = read_neighbors,
+) -> tuple[list[dict], list[str]]:
+    """Actively probe each routed network, then return every known neighbor."""
+
+    target_list = list(targets)
+    warnings: list[str] = []
+    cancel_event = threading.Event()
+    for target in target_list:
+        try:
+            sweep(target, cancel_event)
+        except (CommandError, OSError) as exc:
+            warnings.append(f"{target.interface} 探测失败：{exc}")
+
+    devices, neighbor_warnings = collect_neighbor_devices(target_list, neighbors)
+    return devices, warnings + neighbor_warnings
+
+
 def match_local_target(target: NetworkTarget, suffix: str) -> list[dict]:
     normalized = normalize_mac_suffix(suffix)
     local_mac = normalize_mac(target.local_mac)

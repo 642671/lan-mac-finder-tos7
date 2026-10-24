@@ -21,6 +21,7 @@ from .core import (
     discover_networks,
     max_configured_hosts,
     normalize_mac_suffix,
+    probe_network_devices,
 )
 
 SOCKET_DIR = "/var/api"
@@ -175,6 +176,7 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
                             "health",
                             "networks",
                             "devices",
+                            "devices/scan",
                             "scan/start",
                             "scan/status",
                             "scan/stop",
@@ -222,6 +224,33 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
                     head_only=head_only,
                 )
                 return
+            if parts == ["devices", "scan"]:
+                if method != "POST":
+                    raise ApiError(405, "method not allowed")
+                self._read_json_body()
+                inventory_lock = getattr(self.server, "device_scan_lock", None)
+                if inventory_lock is None:
+                    inventory_lock = threading.Lock()
+                if not inventory_lock.acquire(blocking=False):
+                    raise ApiError(409, "device inventory scan is already running")
+                try:
+                    if self._manager().status().get("running"):
+                        raise ApiError(409, "another scan is already running")
+                    targets, warnings = discover_networks()
+                    devices, probe_warnings = probe_network_devices(targets)
+                finally:
+                    inventory_lock.release()
+                self._send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "app": APP_ID,
+                        "version": __version__,
+                        "devices": devices,
+                        "warnings": warnings + probe_warnings,
+                    },
+                )
+                return
             if parts == ["scan", "status"]:
                 if method not in {"GET", "HEAD"}:
                     raise ApiError(405, "method not allowed")
@@ -246,7 +275,15 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
                         400,
                         "MAC suffix must use AA-BB, AA:BB, or AABB format",
                     )
-                status, payload = start_scan_result(self._manager(), suffix)
+                inventory_lock = getattr(self.server, "device_scan_lock", None)
+                if inventory_lock is None:
+                    inventory_lock = threading.Lock()
+                if not inventory_lock.acquire(blocking=False):
+                    raise ApiError(409, "device inventory scan is already running")
+                try:
+                    status, payload = start_scan_result(self._manager(), suffix)
+                finally:
+                    inventory_lock.release()
                 self._send_json(status, payload)
                 return
             if parts == ["scan", "stop"]:
@@ -322,6 +359,7 @@ def serve(socket_path: str = SOCKET_PATH) -> int:
     manager = ScanManager()
     server = ThreadingUnixHTTPServer(socket_path, LanMacFinderHandler)
     server.scan_manager = manager
+    server.device_scan_lock = threading.Lock()
     os.chmod(socket_path, 0o660)
     stop_once = threading.Event()
 

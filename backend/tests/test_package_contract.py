@@ -94,6 +94,9 @@ class PackageContractTests(unittest.TestCase):
     def test_ui_contract(self) -> None:
         html = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+        server = (ROOT / "backend" / "lan_mac_finder" / "server.py").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('id="themeToggle"', html)
         self.assertIn('id="copyIpButton"', html)
         self.assertIn('placeholder="AA-BB / AA:BB / AABB"', html)
@@ -107,6 +110,11 @@ class PackageContractTests(unittest.TestCase):
         self.assertIn("lanMacFinder.searchIntent.v1", script)
         self.assertIn("resumeContinuousSearch", script)
         self.assertIn("REQUEST_TIMEOUT_MS", script)
+        self.assertIn("INVENTORY_REQUEST_TIMEOUT_MS", script)
+        self.assertIn("devices/scan", script)
+        self.assertIn("inventoryScanning", script)
+        self.assertIn('["devices", "scan"]', server)
+        self.assertIn('"devices/scan"', server)
         self.assertIn("setInputInvalidState", script)
         self.assertIn("var MIN_WORKSPACE_WIDTH = 560", script)
         self.assertIn("var MIN_NETWORK_PANE_HEIGHT = 200", script)

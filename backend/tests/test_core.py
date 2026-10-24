@@ -26,6 +26,7 @@ from lan_mac_finder.core import (  # noqa: E402
     normalize_mac_suffix,
     parse_ipv4_network,
     parse_neighbor_items,
+    probe_network_devices,
 )
 
 
@@ -360,6 +361,47 @@ class ScanManagerTests(unittest.TestCase):
         self.assertEqual(len(status["results"]), 1)
         self.assertEqual(status["results"][0]["state"], "LOCAL")
         self.assertEqual(status["results"][0]["mac"], "02-42-AC-11-45-6A")
+
+    def test_probe_network_devices_returns_all_neighbors(self) -> None:
+        target = self._target()
+        sweep_calls = []
+
+        def sweep(actual_target, cancel_event):
+            self.assertIs(actual_target, target)
+            self.assertFalse(cancel_event.is_set())
+            sweep_calls.append(actual_target.interface)
+            return True
+
+        def neighbors(interface):
+            return [
+                NeighborRecord(
+                    interface,
+                    "192.0.2.10",
+                    "02-42-AC-11-45-6A",
+                    "REACHABLE",
+                ),
+                NeighborRecord(
+                    interface,
+                    "192.0.2.11",
+                    "02-42-AC-11-12-34",
+                    "STALE",
+                ),
+            ]
+
+        devices, warnings = probe_network_devices(
+            [target],
+            sweep=sweep,
+            neighbors=neighbors,
+        )
+
+        self.assertEqual(sweep_calls, ["enp1s0"])
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(devices), 3)
+        self.assertIn("LOCAL", {device["state"] for device in devices})
+        self.assertEqual(
+            {device["ip"] for device in devices},
+            {"192.0.2.25", "192.0.2.10", "192.0.2.11"},
+        )
 
 
 if __name__ == "__main__":

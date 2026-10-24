@@ -15,6 +15,7 @@ var MIN_NETWORK_PANE_HEIGHT = 200;
 var CONTINUOUS_RESTART_DELAY_MS = 1100;
 var SERVICE_RETRY_DELAY_MS = 2200;
 var REQUEST_TIMEOUT_MS = 12000;
+var INVENTORY_REQUEST_TIMEOUT_MS = 45000;
 var DEFAULT_INPUT_ERROR =
   "请输入 AA-BB、AA:BB 或 AABB 格式的 MAC 后四位。";
 var API_CANDIDATES = (function buildCandidates() {
@@ -56,6 +57,7 @@ var state = {
   normalizedSuffix: "",
   scanStatus: "idle",
   continuous: false,
+  inventoryScanning: false,
   searchGeneration: 0,
   retryDelay: SERVICE_RETRY_DELAY_MS,
   lastRequestErrorKind: "",
@@ -246,9 +248,13 @@ function apiFailure(kind, url, detail, status) {
   return error;
 }
 
-async function send(root, endpoint, payload) {
+async function send(root, endpoint, payload, options) {
   var url = root + "/" + endpoint;
   var withBody = payload !== undefined && payload !== null;
+  var timeoutMs = Math.max(
+    1000,
+    Number(options && options.timeoutMs) || REQUEST_TIMEOUT_MS
+  );
   var response;
   var requestController = typeof AbortController === "function"
     ? new AbortController()
@@ -256,7 +262,7 @@ async function send(root, endpoint, payload) {
   var requestTimeout = requestController
     ? window.setTimeout(function () {
       requestController.abort();
-    }, REQUEST_TIMEOUT_MS)
+    }, timeoutMs)
     : null;
   try {
     response = await fetch(url, {
@@ -275,7 +281,7 @@ async function send(root, endpoint, payload) {
       "network",
       url,
       error.name === "AbortError"
-        ? "请求超过 " + Math.round(REQUEST_TIMEOUT_MS / 1000) + " 秒未响应"
+        ? "请求超过 " + Math.round(timeoutMs / 1000) + " 秒未响应"
         : (error.name || "Error") + ": " + error.message
     );
   }
@@ -291,7 +297,7 @@ async function send(root, endpoint, payload) {
       throw apiFailure(
         "network",
         url,
-        "请求超过 " + Math.round(REQUEST_TIMEOUT_MS / 1000) + " 秒未响应"
+        "请求超过 " + Math.round(timeoutMs / 1000) + " 秒未响应"
       );
     }
   }
@@ -371,17 +377,17 @@ async function refreshApiRoot() {
   );
 }
 
-async function apiRequest(endpoint, payload) {
+async function apiRequest(endpoint, payload, options) {
   if (!apiReady) {
     await refreshApiRoot();
   }
   try {
-    return await send(API_ROOT, endpoint, payload);
+    return await send(API_ROOT, endpoint, payload, options);
   } catch (error) {
     if (error.kind === "gateway") {
       apiReady = false;
       await refreshApiRoot();
-      return await send(API_ROOT, endpoint, payload);
+      return await send(API_ROOT, endpoint, payload, options);
     }
     throw error;
   }
@@ -620,25 +626,28 @@ function updateControls() {
   var inputClearButton = byId("inputClearButton");
   var input = byId("macSuffix");
   var searchActive = state.running || state.continuous;
+  var busy = searchActive || state.inventoryScanning;
 
-  scanButton.disabled = searchActive;
+  scanButton.disabled = busy;
   stopButton.disabled = !searchActive || state.stopping;
-  refreshButton.disabled = state.running;
-  emptyRefreshButton.disabled = state.running && !state.continuous;
-  input.disabled = searchActive;
+  refreshButton.disabled = state.running || state.inventoryScanning;
+  emptyRefreshButton.disabled = busy && !state.continuous;
+  input.disabled = busy;
   inputClearButton.hidden = !input.value.trim();
   copyButton.disabled = !state.selectedMac;
   copyIpButton.disabled = !state.selectedIp;
   clearButton.disabled = state.tableMode !== "results";
   setText(
     "scanButtonText",
-    state.stopping
-      ? "停止中"
-      : state.running
-        ? "持续扫描中"
-        : state.continuous
-          ? "持续搜索中"
-          : "开始扫描"
+    state.inventoryScanning
+      ? "扫描设备中"
+      : state.stopping
+        ? "停止中"
+        : state.running
+          ? "持续扫描中"
+          : state.continuous
+            ? "持续搜索中"
+            : "开始扫描"
   );
   setText(
     "emptyRefreshButton",
@@ -826,7 +835,7 @@ function renderDevices(devices, force) {
 function renderEmptyForStatus(status) {
   if (state.tableMode === "devices") {
     setText("emptyTitle", "暂无设备记录");
-    setText("emptyMessage", "当前邻居表中没有可显示的设备，刷新后再试。");
+    setText("emptyMessage", "当前网段中没有探测到设备，刷新后再试。");
     return;
   }
   if (state.continuous) {
@@ -868,7 +877,7 @@ function renderEmptyForStatus(status) {
   }
   if (status === "completed") {
     setText("emptyTitle", "未找到匹配设备");
-    setText("emptyMessage", "当前邻居表中没有符合该 MAC 后缀的记录。");
+    setText("emptyMessage", "当前网段中没有符合该 MAC 后缀的记录。");
     return;
   }
   setText("emptyTitle", "等待扫描");
@@ -1102,7 +1111,7 @@ function renderScanStatus(data, notifyTerminal) {
 }
 
 async function refreshNetworks(silent, refreshDeviceList) {
-  if (state.running) {
+  if (state.running || state.inventoryScanning) {
     return false;
   }
   var isSilent = !!silent;
@@ -1151,13 +1160,24 @@ async function refreshNetworks(silent, refreshDeviceList) {
     }
     return false;
   } finally {
-    byId("refreshButton").disabled = state.running;
+    byId("refreshButton").disabled =
+      state.running || state.inventoryScanning;
   }
 }
 
 async function refreshDevices(showError) {
+  if (state.inventoryScanning) {
+    return false;
+  }
+  state.inventoryScanning = true;
+  updateControls();
+  setText("resultSummary", "正在主动探测当前网段内的设备。");
   try {
-    var data = await apiRequest("devices", null);
+    var data = await apiRequest(
+      "devices/scan",
+      {},
+      { timeoutMs: INVENTORY_REQUEST_TIMEOUT_MS }
+    );
     state.devices = Array.isArray(data.devices) ? data.devices : [];
     if (Array.isArray(data.warnings) && data.warnings.length) {
       state.warnings = Array.from(new Set(state.warnings.concat(data.warnings)));
@@ -1167,17 +1187,25 @@ async function refreshDevices(showError) {
     setText(
       "resultSummary",
       state.devices.length
-        ? "当前邻居表中共有 " + state.devices.length + " 台已知设备。"
-        : "当前邻居表中暂无已知设备。"
+        ? "当前网段共探测到 " + state.devices.length + " 台设备。"
+        : "当前网段中暂未探测到设备。"
     );
-    setText("scanFooterMeta", "已知设备 " + state.devices.length + " 台");
+    setText("scanFooterMeta", "已探测设备 " + state.devices.length + " 台");
     renderEmptyForStatus("idle");
     return true;
   } catch (error) {
+    state.warnings = Array.from(
+      new Set(state.warnings.concat([describeError(error)]))
+    );
+    renderWarnings();
+    setText("resultSummary", "设备总表探测失败，请检查网络或服务状态。");
     if (showError) {
       toast(describeError(error), true);
     }
     return false;
+  } finally {
+    state.inventoryScanning = false;
+    updateControls();
   }
 }
 
@@ -1322,7 +1350,7 @@ async function pollScanStatus(generation) {
 
 async function startScan(options) {
   var startOptions = options || {};
-  if (state.running) {
+  if (state.running || state.inventoryScanning) {
     return;
   }
   if (!startOptions.continuousCycle) {
@@ -1538,10 +1566,10 @@ async function clearResults() {
   setText(
     "resultSummary",
     state.devices.length
-      ? "当前邻居表中共有 " + state.devices.length + " 台已知设备。"
-      : "当前邻居表中暂无已知设备。"
+      ? "当前网段共探测到 " + state.devices.length + " 台设备。"
+      : "当前网段中暂未探测到设备。"
   );
-  setText("scanFooterMeta", "已知设备 " + state.devices.length + " 台");
+  setText("scanFooterMeta", "已探测设备 " + state.devices.length + " 台");
   setScanState(
     "idle",
     "准备就绪",
