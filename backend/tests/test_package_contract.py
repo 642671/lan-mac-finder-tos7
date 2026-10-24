@@ -93,9 +93,24 @@ class PackageContractTests(unittest.TestCase):
 
     def test_ui_contract(self) -> None:
         html = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
         self.assertIn('id="themeToggle"', html)
         self.assertIn('id="copyIpButton"', html)
+        self.assertIn('placeholder="AA-BB / AA:BB / AABB"', html)
+        self.assertIn('aria-invalid="false"', html)
+        self.assertNotIn('maxlength="5"', html)
+        self.assertNotIn('id="inputHint"', html)
+        self.assertIn('id="sidebarResizer"', html)
+        self.assertIn('id="networkResizer"', html)
+        self.assertIn('role="separator"', html)
         self.assertIn("window.parent.localStorage.getItem(\"themeMode\")", html)
+        self.assertIn("lanMacFinder.searchIntent.v1", script)
+        self.assertIn("resumeContinuousSearch", script)
+        self.assertIn("REQUEST_TIMEOUT_MS", script)
+        self.assertIn("setInputInvalidState", script)
+        self.assertIn("var MIN_WORKSPACE_WIDTH = 560", script)
+        self.assertIn("var MIN_NETWORK_PANE_HEIGHT = 200", script)
+        self.assertIn("当前没有搜索到", script)
         titlebar = html.split('class="titlebar-actions"', 1)[1].split("</header>", 1)[0]
         self.assertNotIn('id="themeToggle"', titlebar)
 

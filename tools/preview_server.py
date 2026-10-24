@@ -98,9 +98,11 @@ DEVICES = [
 
 
 class PreviewState:
-    def __init__(self) -> None:
+    def __init__(self, no_match: bool = False) -> None:
         self.lock = threading.Lock()
         self.cancel = threading.Event()
+        self.no_match = no_match
+        self.job_sequence = 0
         self.data = self._idle()
 
     @staticmethod
@@ -128,10 +130,11 @@ class PreviewState:
         with self.lock:
             return json.loads(json.dumps(self.data))
 
-    def start(self, suffix: str) -> None:
+    def start(self, suffix: str) -> bool:
         with self.lock:
             if self.data["running"]:
-                return
+                return False
+            self.job_sequence += 1
             self.cancel = threading.Event()
             self.data = self._idle()
             self.data.update(
@@ -139,7 +142,7 @@ class PreviewState:
                     "status": "discovering",
                     "running": True,
                     "suffix": suffix,
-                    "job_id": "preview",
+                    "job_id": f"preview-{self.job_sequence}",
                     "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 }
             )
@@ -149,6 +152,7 @@ class PreviewState:
             daemon=True,
             name="preview-scan",
         ).start()
+        return True
 
     def stop(self) -> None:
         with self.lock:
@@ -181,17 +185,18 @@ class PreviewState:
                 if completed > 254:
                     self.data["current_interface"] = "enp2s0"
                     self.data["current_range"] = "198.51.100.0/24"
-        first_mac = f"02-42-AC-11-{suffix[:2]}-{suffix[2:]}"
-        with self.lock:
-            self.data["results"] = [
-                {
-                    "interface": "enp1s0",
-                    "scan_range": "192.0.2.0/24",
-                    "ip": "192.0.2.88",
-                    "mac": first_mac,
-                    "state": "LOCAL",
-                },
-            ]
+        if not self.no_match:
+            first_mac = f"02-42-AC-11-{suffix[:2]}-{suffix[2:]}"
+            with self.lock:
+                self.data["results"] = [
+                    {
+                        "interface": "enp1s0",
+                        "scan_range": "192.0.2.0/24",
+                        "ip": "192.0.2.88",
+                        "mac": first_mac,
+                        "state": "LOCAL",
+                    },
+                ]
         self._finish("completed")
 
     def _finish(self, status: str) -> None:
@@ -254,7 +259,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                     "ok": True,
                     "status": "ok",
                     "app": APP_ID,
-                    "version": "1.0.005-preview",
+                    "version": "1.0.006-preview",
                     "python": "preview",
                     "max_hosts": 1022,
                 },
@@ -266,7 +271,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.005-preview",
+                    "version": "1.0.006-preview",
                     "max_hosts": 1022,
                     "networks": NETWORKS,
                     "warnings": ["预览模式：docker0 已作为虚拟网卡跳过"],
@@ -279,7 +284,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.005-preview",
+                    "version": "1.0.006-preview",
                     "devices": DEVICES,
                     "warnings": [],
                 },
@@ -291,7 +296,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.005-preview",
+                    "version": "1.0.006-preview",
                     **STATE.status(),
                 },
             )
@@ -301,7 +306,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             return
         if urlsplit(self.path).path in {"", "/"}:
             source = (FRONTEND / "index.html").read_text(encoding="utf-8")
-            raw = source.replace("__APP_VERSION__", "1.0.005-preview").encode("utf-8")
+            raw = source.replace("__APP_VERSION__", "1.0.006-preview").encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(raw)))
@@ -319,15 +324,27 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             if len(suffix) != 4:
                 self._json(400, {"ok": False, "error": "invalid suffix"})
                 return
-            STATE.start(suffix)
+            started = STATE.start(suffix)
+            actual = STATE.status()
+            if not started and actual.get("suffix") != suffix:
+                self._json(
+                    409,
+                    {
+                        "ok": False,
+                        "error": "another MAC suffix is already being scanned",
+                    },
+                )
+                return
             self._json(
-                202,
+                202 if started else 200,
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "started": True,
-                    "running": True,
-                    "suffix": suffix,
+                    "started": started,
+                    "running": actual.get("running"),
+                    "status": actual.get("status"),
+                    "job_id": actual.get("job_id", ""),
+                    "suffix": actual.get("suffix", ""),
                 },
             )
             return
@@ -339,9 +356,16 @@ class PreviewHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> int:
+    global STATE
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=4178)
+    parser.add_argument(
+        "--no-match",
+        action="store_true",
+        help="complete scans without returning a matching device",
+    )
     args = parser.parse_args()
+    STATE = PreviewState(no_match=args.no_match)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), PreviewHandler)
     print(f"Preview: http://127.0.0.1:{args.port}/")
     try:

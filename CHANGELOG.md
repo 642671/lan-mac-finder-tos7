@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.006 - 2026-10-24
+
+- Keep incomplete MAC input neutral while the field is focused, while still
+  rejecting more than four digits or more than five characters with a
+  separator immediately.
+- Move the complete `AA-BB / AA:BB / AABB` format guidance into the input
+  placeholder and expose validation state through `aria-invalid`.
+- Make both application boundaries draggable by mouse, touch, and keyboard,
+  with minimum sidebar, workspace, scan-panel, and network-panel sizes.
+- Turn a submitted non-empty suffix into a persistent continuous search that
+  refreshes networks, keeps the latest match while the next cycle runs, shows
+  the no-match state when a completed cycle returns no devices, retries after
+  NAS or API interruptions, and resumes after a WebUI reload.
+- Add request timeouts, backoff for recoverable service failures, and explicit
+  stop, clear, login-required, and scan-conflict handling.
+
 ## 1.0.005 - 2026-10-22
 
 - Give the packaged SVG icon a version-derived modification time so TOS

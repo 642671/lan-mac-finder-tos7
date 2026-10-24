@@ -3,7 +3,7 @@
 `lan-mac-finder` is a TOS 7 iframe Deb application for finding devices in the
 NAS's current physical LAN by the last four characters of their MAC address.
 
-Current version: `1.0.005`.
+Current version: `1.0.006`.
 
 ## Features
 
@@ -18,9 +18,19 @@ Current version: `1.0.005`.
 - Read `REACHABLE`, `STALE`, `DELAY`, and `PROBE` neighbor records.
 - Match `AA-BB`, `AA:BB`, and `AABB` suffixes case-insensitively.
 - Preserve the exact casing typed in the input while comparing the normalized suffix.
+- Keep incomplete input neutral while the field is focused, while rejecting
+  overlong fragments immediately and exposing the error state to assistive
+  technology.
+- Show the complete accepted-format hint directly inside the empty input.
 - Show the current neighbor table as a device overview before searching.
 - Include each physical interface's own MAC as a `LOCAL` device.
 - Clear the search field to return immediately to the unfiltered device overview.
+- Keep a submitted non-empty suffix searching automatically. A cycle refreshes
+  physical networks, retains the latest match while the next scan is running,
+  shows the no-match state when a completed scan returns no devices, retries
+  after temporary NAS or API loss, and resumes after the WebUI reloads.
+- Resize the navigation and scan/network boundaries with the mouse, touch, or
+  keyboard while preserving minimum content sizes.
 - Copy either the selected device's IP or MAC address.
 - Follow the TOS `themeMode` on startup and provide a directly clickable
   application theme toggle.
@@ -79,12 +89,15 @@ Requirements:
 
 - Python 3.10 or newer
 - TOS 7 NAS for package and real-network validation
-- Node.js and Playwright only for optional local visual checks
+- Node.js 20 or newer for frontend state tests
+- Playwright only for optional local visual checks
 
 Run the unit tests:
 
 ```powershell
 py -3 -m unittest discover -s backend/tests -v
+node --check frontend/app.js
+node --test tests/frontend_search_state.test.js
 ```
 
 Compile-check the backend:
@@ -116,7 +129,7 @@ Generated packages and SHA256 files are written to `dist/`.
 For a test NAS:
 
 ```bash
-sudo dpkg -i lan-mac-finder_1.0.005_x86_64.deb
+sudo dpkg -i lan-mac-finder_1.0.006_x86_64.deb
 systemctl status lanmacfinder-system.service
 curl --unix-socket /var/api/lan-mac-finder.sock http://localhost/health
 ```
@@ -155,8 +168,8 @@ Then run tests, build both architectures, commit, tag, and push:
 
 ```powershell
 git add -A
-git commit -m "release: v1.0.005"
+git commit -m "release: v1.0.006"
 git push origin main
-git tag -a v1.0.005 -m "LAN MAC Finder v1.0.005"
-git push origin v1.0.005
+git tag -a v1.0.006 -m "LAN MAC Finder v1.0.006"
+git push origin v1.0.006
 ```

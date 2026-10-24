@@ -61,6 +61,26 @@ class ApiError(Exception):
         self.status = status
 
 
+def start_scan_result(manager: Any, suffix: str) -> tuple[int, dict]:
+    started = manager.start(suffix)
+    actual = manager.status()
+    if not started and actual.get("suffix") != suffix:
+        raise ApiError(409, "another MAC suffix is already being scanned")
+    return (
+        202 if started else 200,
+        {
+            "ok": True,
+            "app": APP_ID,
+            "started": started,
+            "running": bool(actual.get("running")),
+            "status": actual.get("status"),
+            "job_id": actual.get("job_id", ""),
+            "suffix": actual.get("suffix", ""),
+            "message": "scan started" if started else "scan already running",
+        },
+    )
+
+
 class LanMacFinderHandler(BaseHTTPRequestHandler):
     server_version = f"{APP_ID}/{__version__}"
     timeout = 30
@@ -226,18 +246,8 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
                         400,
                         "MAC suffix must use AA-BB, AA:BB, or AABB format",
                     )
-                started = self._manager().start(suffix)
-                self._send_json(
-                    202 if started else 200,
-                    {
-                        "ok": True,
-                        "app": APP_ID,
-                        "started": started,
-                        "running": True,
-                        "suffix": suffix,
-                        "message": "scan started" if started else "scan already running",
-                    },
-                )
+                status, payload = start_scan_result(self._manager(), suffix)
+                self._send_json(status, payload)
                 return
             if parts == ["scan", "stop"]:
                 if method != "POST":

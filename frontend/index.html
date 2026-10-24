@@ -75,12 +75,12 @@
               id="macSuffix"
               name="macSuffix"
               type="text"
-              maxlength="5"
-              placeholder="A1-B2"
+              placeholder="AA-BB / AA:BB / AABB"
               spellcheck="false"
               autocomplete="off"
               autocapitalize="none"
-              aria-describedby="inputHint inputError">
+              aria-invalid="false"
+              aria-describedby="inputError">
             <button
               id="inputClearButton"
               class="input-clear-button"
@@ -94,7 +94,6 @@
               </svg>
             </button>
           </div>
-          <p id="inputHint" class="input-hint">AA-BB / AA:BB / AABB</p>
           <p id="inputError" class="field-error" role="alert" hidden></p>
 
           <div class="scan-actions">
@@ -113,7 +112,7 @@
               class="secondary-button stop-button"
               type="button"
               disabled
-              data-tooltip="停止当前扫描">
+              data-tooltip="停止当前扫描或持续搜索">
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <rect x="6" y="6" width="12" height="12" rx="2"></rect>
               </svg>
@@ -147,6 +146,20 @@
         </div>
       </section>
 
+      <div
+        id="networkResizer"
+        class="panel-resizer horizontal-resizer"
+        role="separator"
+        tabindex="0"
+        aria-label="调整 MAC 后缀定位与活动网段的高度"
+        aria-orientation="horizontal"
+        aria-valuemin="280"
+        aria-valuemax="520"
+        aria-valuenow="430"
+        data-tooltip="拖动调整上下区域，双击恢复默认高度">
+        <span class="resizer-grip" aria-hidden="true"></span>
+      </div>
+
       <section class="control-section network-section" aria-labelledby="networkHeading">
         <div class="section-row">
           <div>
@@ -179,6 +192,20 @@
         <span id="lastScanTime" class="last-scan-time">尚未扫描</span>
       </footer>
     </aside>
+
+    <div
+      id="sidebarResizer"
+      class="panel-resizer vertical-resizer"
+      role="separator"
+      tabindex="0"
+      aria-label="调整 MAC 后缀定位与设备总表的宽度"
+      aria-orientation="vertical"
+      aria-valuemin="280"
+      aria-valuemax="560"
+      aria-valuenow="304"
+      data-tooltip="拖动调整左右区域，双击恢复默认宽度">
+      <span class="resizer-grip" aria-hidden="true"></span>
+    </div>
 
     <main class="workspace" aria-label="设备与 MAC 匹配结果">
       <header class="workspace-header">

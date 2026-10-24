@@ -2,6 +2,21 @@
 
 var APP_ID = "lan-mac-finder";
 var MAC_SUFFIX_PATTERN = /^(?:[0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})$/;
+var SEARCH_INTENT_KEY = "lanMacFinder.searchIntent.v1";
+var SIDEBAR_WIDTH_KEY = "lanMacFinder.layout.sidebarWidth.v1";
+var SCAN_PANE_HEIGHT_KEY = "lanMacFinder.layout.scanPaneHeight.v1";
+var DEFAULT_SIDEBAR_WIDTH = 304;
+var DEFAULT_SCAN_PANE_HEIGHT = 430;
+var MIN_SIDEBAR_WIDTH = 280;
+var MAX_SIDEBAR_WIDTH = 560;
+var MIN_WORKSPACE_WIDTH = 560;
+var MIN_SCAN_PANE_HEIGHT = 280;
+var MIN_NETWORK_PANE_HEIGHT = 200;
+var CONTINUOUS_RESTART_DELAY_MS = 1100;
+var SERVICE_RETRY_DELAY_MS = 2200;
+var REQUEST_TIMEOUT_MS = 12000;
+var DEFAULT_INPUT_ERROR =
+  "请输入 AA-BB、AA:BB 或 AABB 格式的 MAC 后四位。";
 var API_CANDIDATES = (function buildCandidates() {
   var directory = location.pathname.slice(0, location.pathname.lastIndexOf("/") + 1);
   var values = [
@@ -21,6 +36,7 @@ var API_CANDIDATES = (function buildCandidates() {
 var API_ROOT = API_CANDIDATES[0];
 var apiReady = false;
 var pollTimer = null;
+var continuousRestartTimer = null;
 var toastTimer = null;
 var activeTooltipTarget = null;
 
@@ -39,6 +55,10 @@ var state = {
   activeSuffix: "",
   normalizedSuffix: "",
   scanStatus: "idle",
+  continuous: false,
+  searchGeneration: 0,
+  retryDelay: SERVICE_RETRY_DELAY_MS,
+  lastRequestErrorKind: "",
   totalHosts: 0,
   probedHosts: 0,
   jobId: ""
@@ -70,6 +90,112 @@ function normalizeSuffix(value) {
     return "";
   }
   return text.replace(/[-:]/g, "").toUpperCase();
+}
+
+function readStoredJson(key) {
+  try {
+    var raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function writeStoredJson(key, value) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    return;
+  }
+}
+
+function removeStoredValue(key) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch (error) {
+    return;
+  }
+}
+
+function clearContinuousRestart() {
+  if (continuousRestartTimer) {
+    window.clearTimeout(continuousRestartTimer);
+    continuousRestartTimer = null;
+  }
+}
+
+function nextServiceRetryDelay() {
+  var delay = Math.max(
+    SERVICE_RETRY_DELAY_MS,
+    Number(state.retryDelay) || SERVICE_RETRY_DELAY_MS
+  );
+  state.retryDelay = Math.min(15000, Math.round(delay * 1.65));
+  return delay;
+}
+
+function resetServiceRetryDelay() {
+  state.retryDelay = SERVICE_RETRY_DELAY_MS;
+}
+
+function persistSearchIntent(displaySuffix, normalizedSuffix, results) {
+  writeStoredJson(SEARCH_INTENT_KEY, {
+    displaySuffix: displaySuffix,
+    normalizedSuffix: normalizedSuffix,
+    continuous: true,
+    lastResults: Array.isArray(results) ? results.slice(0, 50) : []
+  });
+}
+
+function persistCurrentFoundResults() {
+  if (!state.continuous) {
+    return;
+  }
+  persistSearchIntent(
+    state.activeSuffix,
+    state.normalizedSuffix,
+    state.results
+  );
+}
+
+function discardSearchIntent() {
+  clearContinuousRestart();
+  removeStoredValue(SEARCH_INTENT_KEY);
+}
+
+function restoreSearchIntent() {
+  var intent = readStoredJson(SEARCH_INTENT_KEY);
+  if (!intent || intent.continuous !== true) {
+    return false;
+  }
+  var displaySuffix = String(intent.displaySuffix || "").trim();
+  var normalizedSuffix = normalizeSuffix(displaySuffix);
+  if (!normalizedSuffix) {
+    removeStoredValue(SEARCH_INTENT_KEY);
+    return false;
+  }
+  byId("macSuffix").value = displaySuffix;
+  state.continuous = true;
+  state.activeSuffix = displaySuffix;
+  state.normalizedSuffix = normalizedSuffix;
+  state.scanStatus = "waiting";
+  state.retryDelay = SERVICE_RETRY_DELAY_MS;
+  var storedResults = Array.isArray(intent.lastResults)
+    ? intent.lastResults.filter(function (item) {
+      return item &&
+        typeof item.interface === "string" &&
+        typeof item.scan_range === "string" &&
+        typeof item.ip === "string" &&
+        typeof item.mac === "string" &&
+        typeof item.state === "string";
+    })
+    : [];
+  renderResults(storedResults, true);
+  setScanState(
+    "running",
+    "恢复持续搜索",
+    "服务恢复后将自动继续查找 MAC 后缀 " + displaySuffix + "。"
+  );
+  return true;
 }
 
 function getCookie(name) {
@@ -124,25 +250,54 @@ async function send(root, endpoint, payload) {
   var url = root + "/" + endpoint;
   var withBody = payload !== undefined && payload !== null;
   var response;
+  var requestController = typeof AbortController === "function"
+    ? new AbortController()
+    : null;
+  var requestTimeout = requestController
+    ? window.setTimeout(function () {
+      requestController.abort();
+    }, REQUEST_TIMEOUT_MS)
+    : null;
   try {
     response = await fetch(url, {
       method: withBody ? "POST" : "GET",
       credentials: "include",
       headers: platformHeaders(withBody),
       body: withBody ? JSON.stringify(payload) : undefined,
+      signal: requestController ? requestController.signal : undefined,
       cache: "no-store"
     });
   } catch (error) {
+    if (requestTimeout) {
+      window.clearTimeout(requestTimeout);
+    }
     throw apiFailure(
       "network",
       url,
-      (error.name || "Error") + ": " + error.message
+      error.name === "AbortError"
+        ? "请求超过 " + Math.round(REQUEST_TIMEOUT_MS / 1000) + " 秒未响应"
+        : (error.name || "Error") + ": " + error.message
     );
   }
 
-  var text = await response.text().catch(function () {
-    return "";
-  });
+  var text = "";
+  try {
+    text = await response.text();
+  } catch (error) {
+    if (requestTimeout) {
+      window.clearTimeout(requestTimeout);
+    }
+    if (error.name === "AbortError") {
+      throw apiFailure(
+        "network",
+        url,
+        "请求超过 " + Math.round(REQUEST_TIMEOUT_MS / 1000) + " 秒未响应"
+      );
+    }
+  }
+  if (requestTimeout) {
+    window.clearTimeout(requestTimeout);
+  }
   var data = null;
   try {
     data = JSON.parse(text);
@@ -379,39 +534,79 @@ function setNetworks(payload) {
   updateControls();
 }
 
+function classifySuffixInput(value) {
+  var text = String(value || "").trim();
+  if (!text) {
+    return { status: "empty", normalized: "" };
+  }
+  if (text.length > 5) {
+    return { status: "too-long", normalized: "" };
+  }
+  if (!/^[0-9A-Fa-f:-]+$/.test(text)) {
+    return { status: "invalid-character", normalized: "" };
+  }
+  var separatorCount = (text.match(/[-:]/g) || []).length;
+  if (separatorCount > 1) {
+    return { status: "invalid-format", normalized: "" };
+  }
+  if (!separatorCount && text.length > 4) {
+    return { status: "too-long", normalized: "" };
+  }
+  if (MAC_SUFFIX_PATTERN.test(text)) {
+    return { status: "valid", normalized: normalizeSuffix(text) };
+  }
+  return { status: "incomplete", normalized: "" };
+}
+
+function inputErrorMessage(status) {
+  if (status === "too-long") {
+    return "无分隔符时最多输入 4 位；带 - 或 : 分隔符时最多输入 5 位。";
+  }
+  if (status === "invalid-character") {
+    return "MAC 后四位只能包含 0-9、A-F，以及一个 - 或 : 分隔符。";
+  }
+  return DEFAULT_INPUT_ERROR;
+}
+
 function validateInput(showError) {
   var input = byId("macSuffix");
+  var result = classifySuffixInput(input.value);
+  if (result.status === "empty") {
+    setInputInvalidState(false);
+    return "";
+  }
+  if (result.status === "valid") {
+    setInputInvalidState(false);
+    return result.normalized;
+  }
+  var inputIsFocused = document.activeElement === input;
+  var shouldShowError = !!showError &&
+    (result.status !== "incomplete" || !inputIsFocused);
+  if (shouldShowError) {
+    showInputError(inputErrorMessage(result.status));
+    return "";
+  }
+  setInputInvalidState(false);
+  return "";
+}
+
+function setInputInvalidState(invalid, message) {
   var shell = byId("inputShell");
   var error = byId("inputError");
-  var value = input.value.trim();
-  if (!value) {
-    shell.classList.remove("is-invalid");
+  var input = byId("macSuffix");
+  shell.classList.toggle("is-invalid", !!invalid);
+  input.setAttribute("aria-invalid", invalid ? "true" : "false");
+  if (invalid) {
+    error.textContent = message || DEFAULT_INPUT_ERROR;
+    error.hidden = false;
+  } else {
+    error.textContent = "";
     error.hidden = true;
-    return "";
   }
-  var normalized = normalizeSuffix(value);
-  if (!normalized) {
-    if (showError) {
-      error.textContent = "请输入 AA-BB、AA:BB 或 AABB 格式的 MAC 后四位。";
-      error.hidden = false;
-      shell.classList.add("is-invalid");
-    } else {
-      shell.classList.remove("is-invalid");
-      error.hidden = true;
-    }
-    return "";
-  }
-  error.hidden = true;
-  shell.classList.remove("is-invalid");
-  return normalized;
 }
 
 function showInputError(message) {
-  var error = byId("inputError");
-  error.textContent = message || "请输入 AA-BB、AA:BB 或 AABB 格式的 MAC 后四位。";
-  error.hidden = false;
-  byId("inputShell").classList.add("is-invalid");
-  byId("macSuffix").focus();
+  setInputInvalidState(true, message || DEFAULT_INPUT_ERROR);
 }
 
 function updateControls() {
@@ -424,19 +619,34 @@ function updateControls() {
   var clearButton = byId("clearButton");
   var inputClearButton = byId("inputClearButton");
   var input = byId("macSuffix");
+  var searchActive = state.running || state.continuous;
 
-  scanButton.disabled = state.running || state.networks.length === 0;
-  stopButton.disabled = !state.running || state.stopping;
+  scanButton.disabled = searchActive;
+  stopButton.disabled = !searchActive || state.stopping;
   refreshButton.disabled = state.running;
-  emptyRefreshButton.disabled = state.running;
-  input.disabled = state.running;
-  inputClearButton.hidden = state.running || !input.value.trim();
+  emptyRefreshButton.disabled = state.running && !state.continuous;
+  input.disabled = searchActive;
+  inputClearButton.hidden = !input.value.trim();
   copyButton.disabled = !state.selectedMac;
   copyIpButton.disabled = !state.selectedIp;
-  clearButton.disabled = state.tableMode !== "results" || state.results.length === 0;
+  clearButton.disabled = state.tableMode !== "results";
   setText(
     "scanButtonText",
-    state.running ? (state.stopping ? "停止中" : "扫描中") : "开始扫描"
+    state.stopping
+      ? "停止中"
+      : state.running
+        ? "持续扫描中"
+        : state.continuous
+          ? "持续搜索中"
+          : "开始扫描"
+  );
+  setText(
+    "emptyRefreshButton",
+    state.continuous
+      ? "停止持续搜索"
+      : state.tableMode === "results"
+        ? "重新识别网段"
+        : "刷新设备总表"
   );
 }
 
@@ -531,6 +741,9 @@ function renderTable(items, mode, force) {
   state.tableMode = mode;
   if (mode === "results") {
     state.results = safeItems;
+    if (state.continuous && (safeItems.length || !state.running)) {
+      persistCurrentFoundResults();
+    }
   } else {
     state.devices = safeItems;
   }
@@ -616,6 +829,28 @@ function renderEmptyForStatus(status) {
     setText("emptyMessage", "当前邻居表中没有可显示的设备，刷新后再试。");
     return;
   }
+  if (state.continuous) {
+    setText("emptyTitle", "当前没有搜索到");
+    if (status === "running") {
+      setText(
+        "emptyMessage",
+        "正在持续查找 MAC 后缀 " + state.activeSuffix +
+          "，找到设备后会自动显示。"
+      );
+    } else if (status === "error" || status === "waiting") {
+      setText(
+        "emptyMessage",
+        "当前服务暂不可用；恢复后会自动继续搜索，找到设备后会显示在这里。"
+      );
+    } else {
+      setText(
+        "emptyMessage",
+        "本轮未发现 MAC 后缀 " + state.activeSuffix +
+          "，将自动开始下一轮搜索。"
+      );
+    }
+    return;
+  }
   if (status === "running") {
     setText("emptyTitle", "正在扫描");
     setText("emptyMessage", "网段探测和邻居表读取正在后台进行。");
@@ -656,6 +891,13 @@ function formatTime(value) {
   });
 }
 
+function shouldPreserveContinuousResults(running, incomingResults, currentResults) {
+  return state.continuous &&
+    !!running &&
+    incomingResults.length === 0 &&
+    currentResults.length > 0;
+}
+
 function renderScanStatus(data, notifyTerminal) {
   var wasRunning = state.running;
   state.running = !!data.running;
@@ -667,10 +909,18 @@ function renderScanStatus(data, notifyTerminal) {
   }
   state.totalHosts = Number(data.total_hosts) || 0;
   state.probedHosts = Number(data.probed_hosts) || 0;
-  state.jobId = data.job_id || state.jobId;
+  state.jobId = data.job_id || "";
 
+  var incomingResults = Array.isArray(data.results) ? data.results : [];
+  var preserveFoundResults = shouldPreserveContinuousResults(
+    state.running,
+    incomingResults,
+    state.results
+  );
   if (data.job_id || state.tableMode === "results") {
-    renderResults(data.results || [], false);
+    if (!preserveFoundResults) {
+      renderResults(incomingResults, false);
+    }
   }
   updateControls();
 
@@ -681,19 +931,23 @@ function renderScanStatus(data, notifyTerminal) {
       setText("resultSummary", "正在识别当前物理局域网。");
       setScanState(
         "running",
-        "正在识别网段",
-        "读取 IPv4 地址、默认网关和安全的扫描范围。"
+        state.continuous ? "持续搜索中" : "正在识别网段",
+        state.continuous
+          ? "正在刷新物理网段，完成后继续查找后缀 " + state.activeSuffix + "。"
+          : "读取 IPv4 地址、默认网关和安全的扫描范围。"
       );
     } else {
       setProgress(percent, false, "正在探测主机并读取邻居表");
       setText(
         "resultSummary",
-        "正在匹配后缀 " + state.activeSuffix +
+        (state.continuous ? "正在持续匹配后缀 " : "正在匹配后缀 ") +
+          state.activeSuffix +
           "，已探测 " + state.probedHosts + " / " + state.totalHosts + " 台主机。"
       );
       setScanState(
         "running",
-        "正在扫描 " + (data.current_interface || ""),
+        (state.continuous ? "持续搜索中 · " : "正在扫描 ") +
+          (data.current_interface || ""),
         (data.current_range || "准备扫描") +
           " · 已探测 " + state.probedHosts + " 台主机。"
       );
@@ -701,7 +955,29 @@ function renderScanStatus(data, notifyTerminal) {
   } else if (state.scanStatus === "completed") {
     setProgress(100, false, "扫描完成");
     setHidden("scanProgress", true);
-    if (state.results.length) {
+    if (state.continuous && state.results.length) {
+      setScanState(
+        "success",
+        "已找到匹配设备",
+        "后缀 " + state.activeSuffix + " 找到 " + state.results.length +
+          " 条记录，下一轮搜索即将开始。"
+      );
+      setText(
+        "resultSummary",
+        "持续搜索已找到 " + state.results.length +
+          " 台设备，下一轮会自动刷新。"
+      );
+    } else if (state.continuous) {
+      setScanState(
+        "success",
+        "当前没有搜索到",
+        "本轮未发现后缀 " + state.activeSuffix + "，将自动开始下一轮搜索。"
+      );
+      setText(
+        "resultSummary",
+        "当前没有搜索到后缀 " + state.activeSuffix + "，持续搜索仍在进行。"
+      );
+    } else if (state.results.length) {
       setScanState(
         "success",
         "扫描完成",
@@ -724,19 +1000,44 @@ function renderScanStatus(data, notifyTerminal) {
     }
   } else if (state.scanStatus === "stopped") {
     setHidden("scanProgress", true);
-    setScanState(
-      "idle",
-      "扫描已停止",
-      "已保留停止前找到的 " + state.results.length + " 条记录。"
-    );
-    setText("resultSummary", "扫描已停止，停止前的结果仍可选择和复制。");
+    if (state.continuous) {
+      setScanState(
+        "running",
+        "持续搜索中",
+        "上一轮任务已停止，将自动开始下一轮搜索。"
+      );
+      setText("resultSummary", "持续搜索正在自动恢复当前查询。");
+    } else {
+      setScanState(
+        "idle",
+        "扫描已停止",
+        "已保留停止前找到的 " + state.results.length + " 条记录。"
+      );
+      setText("resultSummary", "扫描已停止，停止前的结果仍可选择和复制。");
+    }
   } else if (state.scanStatus === "error") {
     setHidden("scanProgress", true);
-    setScanState("error", "扫描失败", data.error || "无法读取当前物理网段。");
-    setText("resultSummary", data.error || "扫描未完成。");
+    if (state.continuous) {
+      setScanState(
+        "running",
+        "等待 NAS 恢复",
+        "持续搜索已保留；服务恢复后会自动继续。"
+      );
+      setText("resultSummary", "持续搜索等待服务恢复，找到设备后会自动显示。");
+    } else {
+      setScanState("error", "扫描失败", data.error || "无法读取当前物理网段。");
+      setText("resultSummary", data.error || "扫描未完成。");
+    }
   } else {
     setHidden("scanProgress", true);
-    if (!state.networks.length) {
+    if (state.continuous) {
+      setScanState(
+        "running",
+        "等待继续搜索",
+        "搜索任务已保留，将自动开始下一轮扫描。"
+      );
+      setText("resultSummary", "持续搜索正在准备下一轮扫描。");
+    } else if (!state.networks.length) {
       setScanState("error", "没有可扫描网段", "请刷新物理网卡和默认网关。");
     } else {
       setScanState(
@@ -770,10 +1071,13 @@ function renderScanStatus(data, notifyTerminal) {
         : "共探测 " + state.totalHosts + " 台主机"
     );
   } else if (state.tableMode === "results") {
-    setText("scanFooterMeta", "等待网络扫描");
+    setText(
+      "scanFooterMeta",
+      state.continuous ? "持续搜索运行中" : "等待网络扫描"
+    );
   }
 
-  if (notifyTerminal && wasRunning && !state.running && state.jobId) {
+  if (notifyTerminal && !state.continuous && wasRunning && !state.running && state.jobId) {
     if (state.scanStatus === "completed") {
       toast(
         state.results.length
@@ -787,18 +1091,33 @@ function renderScanStatus(data, notifyTerminal) {
       toast(data.error || "扫描失败。", true);
     }
   }
+
+  if (
+    state.continuous &&
+    !state.running &&
+    !state.stopping
+  ) {
+    scheduleContinuousRestart(CONTINUOUS_RESTART_DELAY_MS);
+  }
 }
 
-async function refreshNetworks() {
+async function refreshNetworks(silent, refreshDeviceList) {
   if (state.running) {
-    return;
+    return false;
   }
+  var isSilent = !!silent;
+  var shouldRefreshDevices = refreshDeviceList !== false;
   byId("refreshButton").disabled = true;
-  setText("networkSummary", "正在读取物理网卡");
+  setText(
+    "networkSummary",
+    isSilent ? "正在恢复活动网段" : "正在读取物理网卡"
+  );
   try {
     var data = await apiRequest("networks", null);
+    state.lastRequestErrorKind = "";
+    resetServiceRetryDelay();
     setNetworks(data);
-    if (state.tableMode === "devices") {
+    if (shouldRefreshDevices && state.tableMode === "devices") {
       await refreshDevices(false);
     }
     if (state.scanStatus === "idle") {
@@ -810,15 +1129,27 @@ async function refreshNetworks() {
           : "没有找到带默认网关的物理网卡。"
       );
     }
+    return true;
   } catch (error) {
-    state.networks = [];
+    state.lastRequestErrorKind = error.kind || "";
+    if (!isSilent) {
+      state.networks = [];
+    }
     state.warnings = [describeError(error)];
-    setText("networkSummary", "网段读取失败");
-    renderNetworkList();
+    setText(
+      "networkSummary",
+      isSilent ? "等待服务恢复" : "网段读取失败"
+    );
+    if (!isSilent) {
+      renderNetworkList();
+    }
     renderWarnings();
     updateControls();
-    setScanState("error", "网段读取失败", describeError(error));
-    toast(describeError(error), true);
+    if (!isSilent) {
+      setScanState("error", "网段读取失败", describeError(error));
+      toast(describeError(error), true);
+    }
+    return false;
   } finally {
     byId("refreshButton").disabled = state.running;
   }
@@ -855,73 +1186,266 @@ function clearResultsForNewScan() {
   setText("resultSummary", "正在启动扫描。");
 }
 
-function scheduleScanPoll(delay) {
-  if (pollTimer) {
-    window.clearTimeout(pollTimer);
-  }
-  pollTimer = window.setTimeout(pollScanStatus, delay || 450);
-}
-
-async function pollScanStatus() {
-  pollTimer = null;
-  try {
-    var data = await apiRequest("scan/status", null);
-    renderScanStatus(data, true);
-    if (data.running) {
-      scheduleScanPoll(450);
-    }
-  } catch (error) {
-    state.running = false;
-    state.stopping = false;
-    updateControls();
-    setScanState("error", "状态读取失败", describeError(error));
-    toast(describeError(error), true);
-  }
-}
-
-async function startScan() {
-  if (state.running) {
+function scheduleContinuousRestart(delay) {
+  clearContinuousRestart();
+  if (!state.continuous || state.running || state.stopping) {
     return;
   }
-  var displaySuffix = byId("macSuffix").value.trim();
-  var suffix = validateInput(true);
-  if (!suffix) {
-    showInputError();
+  continuousRestartTimer = window.setTimeout(
+    resumeContinuousSearch,
+    delay || CONTINUOUS_RESTART_DELAY_MS
+  );
+}
+
+function showContinuousWaiting(title, message, error) {
+  state.running = false;
+  state.stopping = false;
+  state.scanStatus = "waiting";
+  setHidden("scanProgress", true);
+  updateControls();
+  setScanState("running", title, message);
+  setText("resultSummary", message);
+  if (error) {
+    setBackendState("offline", "等待服务恢复");
+  }
+  renderEmptyForStatus("waiting");
+  var visibleRows = visibleTableRows();
+  setText("resultCount", visibleRows.length);
+  setHidden("tableWrap", visibleRows.length === 0);
+  setHidden("emptyState", visibleRows.length > 0);
+}
+
+async function resumeContinuousSearch() {
+  continuousRestartTimer = null;
+  if (!state.continuous || state.running || state.stopping) {
+    return;
+  }
+  var generation = state.searchGeneration;
+  setScanState(
+    "running",
+    "持续搜索中",
+    "正在确认活动网段并准备下一轮搜索。"
+  );
+  var networksReady = await refreshNetworks(true, false);
+  if (
+    generation !== state.searchGeneration ||
+    !state.continuous ||
+    state.stopping
+  ) {
+    return;
+  }
+  if (!networksReady) {
+    if (state.lastRequestErrorKind === "session") {
+      setBackendState("warning", "需要重新登录");
+      showContinuousWaiting(
+        "需要重新登录",
+        "持续搜索已保留。重新打开应用并恢复 TOS 会话后会自动继续。"
+      );
+      return;
+    }
+    showContinuousWaiting(
+      "等待 NAS 恢复",
+      "持续搜索已保留；服务恢复后会自动继续查找后缀 " + state.activeSuffix + "。",
+      true
+    );
+    scheduleContinuousRestart(nextServiceRetryDelay());
     return;
   }
   if (!state.networks.length) {
-    toast("没有可扫描的物理网段，请刷新网络。", true);
+    showContinuousWaiting(
+      "等待可用网段",
+      "当前没有可扫描的物理网段，将持续检查并在网段恢复后继续搜索。"
+    );
+    scheduleContinuousRestart(nextServiceRetryDelay());
+    return;
+  }
+  setBackendState("online", "服务在线");
+  await startScan({ continuousCycle: true });
+}
+
+function scheduleScanPoll(delay, generation) {
+  if (pollTimer) {
+    window.clearTimeout(pollTimer);
+  }
+  var expectedGeneration = typeof generation === "number"
+    ? generation
+    : state.searchGeneration;
+  pollTimer = window.setTimeout(function () {
+    pollScanStatus(expectedGeneration);
+  }, delay || 450);
+}
+
+async function pollScanStatus(generation) {
+  pollTimer = null;
+  var expectedGeneration = typeof generation === "number"
+    ? generation
+    : state.searchGeneration;
+  try {
+    var data = await apiRequest("scan/status", null);
+    if (expectedGeneration !== state.searchGeneration) {
+      return;
+    }
+    state.lastRequestErrorKind = "";
+    renderScanStatus(data, true);
+    if (data.running) {
+      scheduleScanPoll(450, expectedGeneration);
+    }
+  } catch (error) {
+    if (expectedGeneration !== state.searchGeneration) {
+      return;
+    }
+    state.lastRequestErrorKind = error.kind || "";
+    if (state.continuous) {
+      if (error.kind === "session") {
+        setBackendState("warning", "需要重新登录");
+        showContinuousWaiting(
+          "需要重新登录",
+          "持续搜索已保留。重新打开应用并恢复 TOS 会话后会自动继续。"
+        );
+        return;
+      }
+      showContinuousWaiting(
+        "等待 NAS 恢复",
+        "与 NAS 的连接暂时中断；服务恢复后会自动继续搜索，已有结果会保留。",
+        error
+      );
+      scheduleContinuousRestart(nextServiceRetryDelay());
+    } else {
+      state.running = false;
+      state.stopping = false;
+      updateControls();
+      setScanState("error", "状态读取失败", describeError(error));
+      toast(describeError(error), true);
+    }
+  }
+}
+
+async function startScan(options) {
+  var startOptions = options || {};
+  if (state.running) {
+    return;
+  }
+  if (!startOptions.continuousCycle) {
+    state.searchGeneration += 1;
+    resetServiceRetryDelay();
+  }
+  var generation = state.searchGeneration;
+  var displaySuffix = byId("macSuffix").value.trim();
+  var suffix = validateInput(true);
+  if (!suffix) {
+    var draft = classifySuffixInput(byId("macSuffix").value);
+    if (draft.status === "empty" && document.activeElement !== byId("macSuffix")) {
+      showInputError();
+    }
+    return;
+  }
+  if (!state.networks.length) {
+    state.continuous = true;
+    state.activeSuffix = displaySuffix;
+    state.normalizedSuffix = suffix;
+    state.scanStatus = "waiting";
+    persistSearchIntent(displaySuffix, suffix, state.results);
+    updateControls();
+    showContinuousWaiting(
+      "等待可用网段",
+      "当前没有可扫描的物理网段，将持续检查并在网段恢复后继续。"
+    );
+    scheduleContinuousRestart(nextServiceRetryDelay());
     return;
   }
 
+  state.continuous = true;
   state.running = true;
   state.stopping = false;
   state.activeSuffix = displaySuffix;
   state.normalizedSuffix = suffix;
   state.scanStatus = "discovering";
-  clearResultsForNewScan();
-  setProgress(0, true, "正在启动扫描");
-  setScanState("running", "正在启动扫描", "准备读取当前物理网段。");
+  clearContinuousRestart();
+  if (!startOptions.continuousCycle) {
+    clearResultsForNewScan();
+    setProgress(0, true, "正在启动扫描");
+    setScanState("running", "正在启动扫描", "准备读取当前物理网段。");
+  } else {
+    setProgress(0, true, "正在继续持续搜索");
+    setScanState(
+      "running",
+      "持续搜索中",
+      "准备重新读取网段并查找后缀 " + displaySuffix + "。"
+    );
+  }
+  persistSearchIntent(displaySuffix, suffix, state.results);
   updateControls();
 
   try {
     await apiRequest("scan/start", { suffix: suffix });
-    scheduleScanPoll(350);
+    if (generation !== state.searchGeneration) {
+      return;
+    }
+    state.lastRequestErrorKind = "";
+    resetServiceRetryDelay();
+    setBackendState("online", "服务在线");
+    scheduleScanPoll(350, generation);
   } catch (error) {
+    if (generation !== state.searchGeneration) {
+      return;
+    }
+    state.lastRequestErrorKind = error.kind || "";
     state.running = false;
     updateControls();
     setHidden("scanProgress", true);
-    if (error.kind === "rejected") {
+    if (error.kind === "rejected" && error.status === 409) {
+      apiRequest("scan/stop", {}).catch(function () {
+        return;
+      });
+      showContinuousWaiting(
+        "切换持续搜索",
+        "正在停止其他扫描任务，随后会继续搜索后缀 " + state.activeSuffix + "。"
+      );
+      scheduleContinuousRestart(CONTINUOUS_RESTART_DELAY_MS);
+    } else if (error.kind === "rejected") {
+      state.continuous = false;
+      discardSearchIntent();
       showInputError(error.detail || "MAC 后缀格式不正确。");
+      updateControls();
+      toast(error.detail || "MAC 后缀格式不正确。", true);
+    } else if (error.kind === "session") {
+      setBackendState("warning", "需要重新登录");
+      showContinuousWaiting(
+        "需要重新登录",
+        "持续搜索已保留。重新打开应用并恢复 TOS 会话后会自动继续。"
+      );
     } else {
-      setScanState("error", "扫描启动失败", describeError(error));
+      showContinuousWaiting(
+        "等待 NAS 恢复",
+        "扫描启动时连接中断；服务恢复后会自动继续搜索，已有结果会保留。",
+        error
+      );
+      scheduleContinuousRestart(nextServiceRetryDelay());
     }
-    toast(describeError(error), true);
   }
 }
 
 async function stopScan() {
-  if (!state.running || state.stopping) {
+  if ((!state.running && !state.continuous) || state.stopping) {
+    return;
+  }
+  state.searchGeneration += 1;
+  var generation = state.searchGeneration;
+  state.continuous = false;
+  discardSearchIntent();
+  if (!state.running) {
+    state.stopping = false;
+    state.scanStatus = "stopped";
+    setHidden("scanProgress", true);
+    setScanState(
+      "idle",
+      "持续搜索已停止",
+      "已保留停止前找到的 " + state.results.length + " 条记录。"
+    );
+    setText("resultSummary", "持续搜索已停止，已有结果仍可选择和复制。");
+    renderEmptyForStatus("stopped");
+    updateControls();
+    toast("持续搜索已停止。", false);
     return;
   }
   state.stopping = true;
@@ -929,9 +1453,15 @@ async function stopScan() {
   setScanState("running", "正在停止扫描", "等待当前批次探测结束。");
   try {
     await apiRequest("scan/stop", {});
-    scheduleScanPoll(250);
+    scheduleScanPoll(250, generation);
   } catch (error) {
+    state.running = false;
     state.stopping = false;
+    state.scanStatus = "stopped";
+    setHidden("scanProgress", true);
+    setScanState("idle", "扫描已停止", "无法确认后端状态，但不会自动重新开始搜索。");
+    setText("resultSummary", "搜索已停止，已有结果仍可选择和复制。");
+    renderEmptyForStatus("stopped");
     updateControls();
     toast(describeError(error), true);
   }
@@ -983,8 +1513,20 @@ async function copySelectedIp() {
 }
 
 async function clearResults() {
-  if (state.running) {
-    return;
+  var wasRunning = state.running;
+  state.searchGeneration += 1;
+  state.continuous = false;
+  discardSearchIntent();
+  state.running = false;
+  state.stopping = false;
+  if (pollTimer) {
+    window.clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+  if (wasRunning) {
+    apiRequest("scan/stop", {}).catch(function () {
+      return;
+    });
   }
   state.scanStatus = "idle";
   state.activeSuffix = "";
@@ -1005,6 +1547,7 @@ async function clearResults() {
     "准备就绪",
     state.networks.length + " 个物理网段可用于扫描。"
   );
+  updateControls();
   await refreshNetworks();
 }
 
@@ -1077,7 +1620,183 @@ function bindTooltips() {
   window.addEventListener("resize", hideTooltip);
 }
 
-async function checkBackend() {
+function sidebarWidthBounds() {
+  var shell = byId("sidebarResizer").parentElement;
+  var splitterWidth = byId("sidebarResizer").offsetWidth || 10;
+  var maximum = Math.min(
+    MAX_SIDEBAR_WIDTH,
+    shell.clientWidth - splitterWidth - MIN_WORKSPACE_WIDTH
+  );
+  maximum = Math.max(MIN_SIDEBAR_WIDTH, maximum);
+  return { min: MIN_SIDEBAR_WIDTH, max: maximum };
+}
+
+function applySidebarWidth(value, persist) {
+  var handle = byId("sidebarResizer");
+  var bounds = sidebarWidthBounds();
+  var width = Math.round(
+    Math.max(bounds.min, Math.min(bounds.max, Number(value) || bounds.min))
+  );
+  document.documentElement.style.setProperty("--sidebar-width", width + "px");
+  handle.setAttribute("aria-valuemin", String(bounds.min));
+  handle.setAttribute("aria-valuemax", String(bounds.max));
+  handle.setAttribute("aria-valuenow", String(width));
+  if (persist) {
+    writeStoredJson(SIDEBAR_WIDTH_KEY, width);
+  }
+  return width;
+}
+
+function scanPaneHeightBounds() {
+  var sidebar = document.querySelector(".sidebar");
+  var footer = document.querySelector(".sidebar-footer");
+  var splitter = byId("networkResizer");
+  var available = sidebar.clientHeight -
+    footer.offsetHeight -
+    splitter.offsetHeight;
+  var maximum = Math.max(
+    MIN_SCAN_PANE_HEIGHT,
+    Math.min(560, available - MIN_NETWORK_PANE_HEIGHT)
+  );
+  return { min: MIN_SCAN_PANE_HEIGHT, max: maximum };
+}
+
+function applyScanPaneHeight(value, persist) {
+  var handle = byId("networkResizer");
+  var bounds = scanPaneHeightBounds();
+  var height = Math.round(
+    Math.max(bounds.min, Math.min(bounds.max, Number(value) || bounds.min))
+  );
+  document.documentElement.style.setProperty("--scan-pane-height", height + "px");
+  handle.setAttribute("aria-valuemin", String(bounds.min));
+  handle.setAttribute("aria-valuemax", String(bounds.max));
+  handle.setAttribute("aria-valuenow", String(height));
+  if (persist) {
+    writeStoredJson(SCAN_PANE_HEIGHT_KEY, height);
+  }
+  return height;
+}
+
+function bindPanelResizer(handle, orientation) {
+  var dragState = null;
+  var isColumn = orientation === "vertical";
+
+  function pointerPosition(event) {
+    return isColumn ? event.clientX : event.clientY;
+  }
+
+  function currentSize() {
+    return isColumn
+      ? document.querySelector(".sidebar").getBoundingClientRect().width
+      : document.querySelector(".scan-control").getBoundingClientRect().height;
+  }
+
+  function applySize(value, persist) {
+    if (isColumn) {
+      return applySidebarWidth(value, persist);
+    }
+    return applyScanPaneHeight(value, persist);
+  }
+
+  handle.addEventListener("pointerdown", function (event) {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    dragState = {
+      pointerId: event.pointerId,
+      startPosition: pointerPosition(event),
+      startSize: currentSize()
+    };
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add("is-active");
+    document.body.classList.add(
+      isColumn ? "is-resizing-column" : "is-resizing-row"
+    );
+    hideTooltip();
+  });
+
+  handle.addEventListener("pointermove", function (event) {
+    if (!dragState || event.pointerId !== dragState.pointerId) {
+      return;
+    }
+    applySize(
+      dragState.startSize + pointerPosition(event) - dragState.startPosition,
+      false
+    );
+  });
+
+  function finishDrag(event, cancelled) {
+    if (!dragState || event.pointerId !== dragState.pointerId) {
+      return;
+    }
+    var finalSize = cancelled
+      ? currentSize()
+      : dragState.startSize +
+        pointerPosition(event) -
+        dragState.startPosition;
+    applySize(finalSize, true);
+    dragState = null;
+    handle.classList.remove("is-active");
+    document.body.classList.remove("is-resizing-column", "is-resizing-row");
+    if (handle.hasPointerCapture(event.pointerId)) {
+      handle.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  handle.addEventListener("pointerup", finishDrag);
+  handle.addEventListener("pointercancel", function (event) {
+    finishDrag(event, true);
+  });
+  handle.addEventListener("dblclick", function () {
+    applySize(
+      isColumn ? DEFAULT_SIDEBAR_WIDTH : DEFAULT_SCAN_PANE_HEIGHT,
+      true
+    );
+  });
+  handle.addEventListener("keydown", function (event) {
+    var size = currentSize();
+    var bounds = isColumn ? sidebarWidthBounds() : scanPaneHeightBounds();
+    var step = event.shiftKey ? 32 : 12;
+    var next = size;
+    if (
+      (isColumn && event.key === "ArrowLeft") ||
+      (!isColumn && event.key === "ArrowUp")
+    ) {
+      next = size - step;
+    } else if (
+      (isColumn && event.key === "ArrowRight") ||
+      (!isColumn && event.key === "ArrowDown")
+    ) {
+      next = size + step;
+    } else if (event.key === "Home") {
+      next = bounds.min;
+    } else if (event.key === "End") {
+      next = bounds.max;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    applySize(next, true);
+  });
+}
+
+function initializePanelLayout() {
+  var storedSidebarWidth = readStoredJson(SIDEBAR_WIDTH_KEY);
+  var storedScanPaneHeight = readStoredJson(SCAN_PANE_HEIGHT_KEY);
+  bindPanelResizer(byId("sidebarResizer"), "vertical");
+  bindPanelResizer(byId("networkResizer"), "horizontal");
+  applySidebarWidth(storedSidebarWidth || DEFAULT_SIDEBAR_WIDTH, false);
+  applyScanPaneHeight(storedScanPaneHeight || DEFAULT_SCAN_PANE_HEIGHT, false);
+  window.addEventListener("resize", function () {
+    var sidebarHandle = byId("sidebarResizer");
+    var scanHandle = byId("networkResizer");
+    applySidebarWidth(Number(sidebarHandle.getAttribute("aria-valuenow")), false);
+    applyScanPaneHeight(Number(scanHandle.getAttribute("aria-valuenow")), false);
+  });
+}
+
+async function checkBackend(quiet) {
   setBackendState("checking", "正在连接服务");
   try {
     var data = await refreshApiRoot();
@@ -1090,7 +1809,9 @@ async function checkBackend() {
   } catch (error) {
     setBackendState("offline", "服务不可用");
     setText("backendVersion", "服务未连接");
-    toast(describeError(error), true);
+    if (!quiet) {
+      toast(describeError(error), true);
+    }
     return false;
   }
 }
@@ -1101,16 +1822,26 @@ function bindEvents() {
 
   input.addEventListener("focus", function () {
     shell.classList.add("is-focused");
+    validateInput(true);
   });
   input.addEventListener("blur", function () {
     shell.classList.remove("is-focused");
+    if (input.value.trim()) {
+      validateInput(true);
+    }
   });
   input.addEventListener("input", function () {
     validateInput(true);
-    byId("inputClearButton").hidden = state.running || !input.value.trim();
-    if (!input.value.trim() && state.tableMode === "results" && !state.running) {
+    byId("inputClearButton").hidden = !input.value.trim();
+    if (
+      !input.value.trim() &&
+      state.tableMode === "results" &&
+      !state.running &&
+      !state.continuous
+    ) {
       clearResults();
     }
+    updateControls();
   });
 
   byId("scanForm").addEventListener("submit", function (event) {
@@ -1118,8 +1849,16 @@ function bindEvents() {
     startScan();
   });
   byId("stopButton").addEventListener("click", stopScan);
-  byId("refreshButton").addEventListener("click", refreshNetworks);
-  byId("emptyRefreshButton").addEventListener("click", refreshNetworks);
+  byId("refreshButton").addEventListener("click", function () {
+    refreshNetworks();
+  });
+  byId("emptyRefreshButton").addEventListener("click", function () {
+    if (state.continuous) {
+      stopScan();
+    } else {
+      refreshNetworks();
+    }
+  });
   byId("copyButton").addEventListener("click", copySelectedMac);
   byId("copyIpButton").addEventListener("click", copySelectedIp);
   byId("clearButton").addEventListener("click", clearResults);
@@ -1133,30 +1872,81 @@ function bindEvents() {
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape") {
       hideTooltip();
-      if (state.running) {
+      if (state.running || state.continuous) {
         event.preventDefault();
         stopScan();
       }
+    }
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (
+      document.visibilityState === "visible" &&
+      state.continuous &&
+      !state.running &&
+      !state.stopping &&
+      !continuousRestartTimer
+    ) {
+      scheduleContinuousRestart(250);
+    }
+  });
+  window.addEventListener("online", function () {
+    if (state.continuous && !state.running && !state.stopping) {
+      scheduleContinuousRestart(250);
     }
   });
 }
 
 async function boot() {
   applyTheme(document.documentElement.getAttribute("data-theme") || "light");
+  initializePanelLayout();
   bindEvents();
   bindTooltips();
+  var restored = restoreSearchIntent();
   updateControls();
-  var online = await checkBackend();
+  var online = await checkBackend(restored);
   if (online) {
-    await refreshNetworks();
+    await refreshNetworks(restored, true);
     try {
       var status = await apiRequest("scan/status", null);
+      if (
+        state.continuous &&
+        status.running &&
+        status.suffix &&
+        status.suffix !== state.normalizedSuffix
+      ) {
+        await apiRequest("scan/stop", {});
+        showContinuousWaiting(
+          "切换持续搜索",
+          "正在停止旧任务，随后会继续搜索后缀 " + state.activeSuffix + "。"
+        );
+        scheduleContinuousRestart(CONTINUOUS_RESTART_DELAY_MS);
+        return;
+      }
       renderScanStatus(status, false);
       if (status.running) {
-        scheduleScanPoll(350);
+        scheduleScanPoll(350, state.searchGeneration);
+      } else if (state.continuous) {
+        scheduleContinuousRestart(CONTINUOUS_RESTART_DELAY_MS);
       }
     } catch (error) {
-      setScanState("error", "状态读取失败", describeError(error));
+      state.lastRequestErrorKind = error.kind || "";
+      if (state.continuous) {
+        if (error.kind === "session") {
+          showContinuousWaiting(
+            "需要重新登录",
+            "持续搜索已保留。重新打开应用并恢复 TOS 会话后会自动继续。"
+          );
+        } else {
+          showContinuousWaiting(
+            "等待 NAS 恢复",
+            "服务恢复后会自动继续搜索，已有结果会保留。",
+            error
+          );
+          scheduleContinuousRestart(nextServiceRetryDelay());
+        }
+      } else {
+        setScanState("error", "状态读取失败", describeError(error));
+      }
     }
   } else {
     state.networks = [];
@@ -1165,6 +1955,14 @@ async function boot() {
     renderNetworkList();
     renderWarnings();
     updateControls();
+    if (state.continuous) {
+      showContinuousWaiting(
+        "等待 NAS 恢复",
+        "持续搜索已保留；服务恢复后会自动继续查找后缀 " + state.activeSuffix + "。",
+        true
+      );
+      scheduleContinuousRestart(nextServiceRetryDelay());
+    }
   }
 }
 

@@ -289,6 +289,29 @@ class ScanManagerTests(unittest.TestCase):
         self.assertEqual(status["probed_hosts"], 254)
         self.assertEqual(status["results"][0]["mac"], "02-42-AC-11-45-6A")
 
+    def test_scan_manager_rejects_parallel_start_without_replacing_job(self) -> None:
+        started = threading.Event()
+
+        def sweep(target, cancel_event, progress):
+            started.set()
+            cancel_event.wait(1)
+            return True
+
+        manager = ScanManager(
+            discover=lambda: ([self._target()], []),
+            neighbors=lambda interface: [],
+            sweep=sweep,
+        )
+        self.assertTrue(manager.start("45-6A"))
+        self.assertTrue(started.wait(1))
+        first_job_id = manager.status()["job_id"]
+        self.assertFalse(manager.start("12-34"))
+        active = manager.status()
+        self.assertEqual(active["suffix"], "456A")
+        self.assertEqual(active["job_id"], first_job_id)
+        self.assertTrue(manager.stop())
+        manager.wait(2)
+
     def test_scan_manager_stops(self) -> None:
         started = threading.Event()
 
