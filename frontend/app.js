@@ -622,6 +622,7 @@ function updateControls() {
   var emptyRefreshButton = byId("emptyRefreshButton");
   var copyButton = byId("copyButton");
   var copyIpButton = byId("copyIpButton");
+  var exportButton = byId("exportButton");
   var clearButton = byId("clearButton");
   var inputClearButton = byId("inputClearButton");
   var input = byId("macSuffix");
@@ -636,6 +637,7 @@ function updateControls() {
   inputClearButton.hidden = !input.value.trim();
   copyButton.disabled = !state.selectedMac;
   copyIpButton.disabled = !state.selectedIp;
+  exportButton.disabled = state.running || visibleTableRows().length === 0;
   clearButton.disabled = state.tableMode !== "results";
   setText(
     "scanButtonText",
@@ -1540,6 +1542,26 @@ async function copySelectedIp() {
   }
 }
 
+function exportVisibleCsv() {
+  var csv = window.LanMacCsv;
+  var rows = visibleTableRows();
+  if (!csv || !rows.length) {
+    toast("当前没有可导出的设备记录。", true);
+    return;
+  }
+  var content = csv.buildCsv(rows);
+  var blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement("a");
+  link.href = url;
+  link.download = "LanMacFinder-" + csv.dateStamp(new Date()) + ".csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+  toast("已导出 " + rows.length + " 条记录", false);
+}
+
 async function clearResults() {
   var wasRunning = state.running;
   state.searchGeneration += 1;
@@ -1889,6 +1911,7 @@ function bindEvents() {
   });
   byId("copyButton").addEventListener("click", copySelectedMac);
   byId("copyIpButton").addEventListener("click", copySelectedIp);
+  byId("exportButton").addEventListener("click", exportVisibleCsv);
   byId("clearButton").addEventListener("click", clearResults);
   byId("inputClearButton").addEventListener("click", function () {
     clearResults().then(function () {
@@ -1898,6 +1921,11 @@ function bindEvents() {
   byId("themeToggle").addEventListener("click", toggleTheme);
 
   document.addEventListener("keydown", function (event) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "e") {
+      event.preventDefault();
+      exportVisibleCsv();
+      return;
+    }
     if (event.key === "Escape") {
       hideTooltip();
       if (state.running || state.continuous) {

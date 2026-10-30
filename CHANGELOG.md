@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.008 - 2026-10-30
+
+- Add CSV export for the current device overview or MAC match table, with a
+  stable column order, UTF-8 BOM for Excel, `Ctrl+E`, and disabled state when
+  there is nothing to export.
+- Escape commas, quotes, and line breaks and neutralize spreadsheet formula
+  injection without altering numeric values.
+- Share the CSV implementation with the Windows build and add Node.js unit
+  tests for default columns, escaping, formulas, and filenames.
+- Follow the explicit result-count and export workflow common to LAN scanners
+  such as Angry IP Scanner while keeping all data on the NAS.
+
+
 ## 1.0.007 - 2026-10-24
 
 - Actively probe every scannable host when loading or refreshing the device

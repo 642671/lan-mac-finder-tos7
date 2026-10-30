@@ -256,6 +256,14 @@
             </svg>
             <span>复制 MAC</span>
           </button>
+          <button id="exportButton" class="secondary-button" type="button" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M12 3v11"></path>
+              <path d="m8 10 4 4 4-4"></path>
+              <path d="M5 20h14"></path>
+            </svg>
+            <span>导出 CSV</span>
+          </button>
           <button
             id="clearButton"
             class="icon-button workspace-icon-button"
@@ -320,6 +328,7 @@
   </div>
   <div id="toastRegion" class="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
 
+  <script src="./csv.js?v=__APP_VERSION__" defer></script>
   <script src="./app.js?v=__APP_VERSION__" defer></script>
 </body>
 </html>

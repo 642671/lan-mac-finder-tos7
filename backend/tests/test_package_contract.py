@@ -75,6 +75,12 @@ class PackageContractTests(unittest.TestCase):
         self.assertNotIn("apt install", postinst)
         self.assertIn('rm -rf "${APP_DIR}"', postrm)
 
+    def test_preview_uses_package_version(self) -> None:
+        preview = (ROOT / "tools" / "preview_server.py").read_text(encoding="utf-8")
+        self.assertIn('APP_VERSION = (ROOT / "VERSION")', preview)
+        self.assertIn("PREVIEW_VERSION = APP_VERSION", preview)
+        self.assertNotRegex(preview, r'"\d+\.\d+\.\d+-preview"')
+
     def test_icon_contract(self) -> None:
         config = json.loads((ROOT / "config.ini").read_text(encoding="utf-8"))
         icon = ROOT / config["icon"].lstrip("/")

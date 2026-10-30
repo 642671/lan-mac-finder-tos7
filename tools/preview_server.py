@@ -14,6 +14,8 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
 APP_ID = "lan-mac-finder"
+APP_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+PREVIEW_VERSION = APP_VERSION + "-preview"
 
 NETWORKS = [
     {
@@ -259,7 +261,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                     "ok": True,
                     "status": "ok",
                     "app": APP_ID,
-                    "version": "1.0.007-preview",
+                    "version": PREVIEW_VERSION,
                     "python": "preview",
                     "max_hosts": 1022,
                 },
@@ -271,7 +273,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.007-preview",
+                    "version": PREVIEW_VERSION,
                     "max_hosts": 1022,
                     "networks": NETWORKS,
                     "warnings": ["预览模式：docker0 已作为虚拟网卡跳过"],
@@ -284,7 +286,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.007-preview",
+                    "version": PREVIEW_VERSION,
                     "devices": DEVICES,
                     "warnings": [],
                 },
@@ -296,7 +298,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.007-preview",
+                    "version": PREVIEW_VERSION,
                     **STATE.status(),
                 },
             )
@@ -306,7 +308,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             return
         if urlsplit(self.path).path in {"", "/"}:
             source = (FRONTEND / "index.html").read_text(encoding="utf-8")
-            raw = source.replace("__APP_VERSION__", "1.0.007-preview").encode("utf-8")
+            raw = source.replace("__APP_VERSION__", PREVIEW_VERSION).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(raw)))
@@ -325,7 +327,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "app": APP_ID,
-                    "version": "1.0.007-preview",
+                    "version": PREVIEW_VERSION,
                     "devices": DEVICES,
                     "warnings": [],
                 },
