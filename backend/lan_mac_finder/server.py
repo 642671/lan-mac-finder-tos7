@@ -20,8 +20,11 @@ from .core import (
     collect_neighbor_devices,
     discover_networks,
     max_configured_hosts,
+    network_target_payload,
     normalize_mac_suffix,
+    normalize_network_ids,
     probe_network_devices,
+    select_network_targets,
 )
 
 SOCKET_DIR = "/var/api"
@@ -62,11 +65,31 @@ class ApiError(Exception):
         self.status = status
 
 
-def start_scan_result(manager: Any, suffix: str) -> tuple[int, dict]:
-    started = manager.start(suffix)
+def parse_network_selection(body: Mapping[str, Any]) -> list[str] | None:
+    try:
+        return normalize_network_ids(body.get("network_ids"))
+    except ValueError as exc:
+        raise ApiError(400, str(exc)) from exc
+
+
+def start_scan_result(
+    manager: Any,
+    suffix: str,
+    network_ids: list[str] | None = None,
+) -> tuple[int, dict]:
+    started = manager.start(suffix, network_ids)
     actual = manager.status()
-    if not started and actual.get("suffix") != suffix:
-        raise ApiError(409, "another MAC suffix is already being scanned")
+    if not started:
+        matches_request = getattr(manager, "matches_request", None)
+        same_request = actual.get("suffix") == suffix
+        if callable(matches_request):
+            same_request = bool(matches_request(suffix, network_ids))
+        if not same_request:
+            raise ApiError(
+                409,
+                "another scan with a different suffix or network selection "
+                "is already running",
+            )
     return (
         202 if started else 200,
         {
@@ -77,6 +100,7 @@ def start_scan_result(manager: Any, suffix: str) -> tuple[int, dict]:
             "status": actual.get("status"),
             "job_id": actual.get("job_id", ""),
             "suffix": actual.get("suffix", ""),
+            "selected_network_ids": actual.get("selected_network_ids", []),
             "message": "scan started" if started else "scan already running",
         },
     )
@@ -201,7 +225,7 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
                         "app": APP_ID,
                         "version": __version__,
                         "max_hosts": max_configured_hosts(),
-                        "networks": [target.as_dict() for target in targets],
+                        "networks": [network_target_payload(target) for target in targets],
                         "warnings": warnings,
                     },
                     head_only=head_only,
@@ -227,7 +251,8 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
             if parts == ["devices", "scan"]:
                 if method != "POST":
                     raise ApiError(405, "method not allowed")
-                self._read_json_body()
+                body = self._read_json_body()
+                network_ids = parse_network_selection(body)
                 inventory_lock = getattr(self.server, "device_scan_lock", None)
                 if inventory_lock is None:
                     inventory_lock = threading.Lock()
@@ -237,6 +262,16 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
                     if self._manager().status().get("running"):
                         raise ApiError(409, "another scan is already running")
                     targets, warnings = discover_networks()
+                    targets, missing = select_network_targets(targets, network_ids)
+                    if missing:
+                        warnings = warnings + [
+                            "所选网段当前不可用：" + "、".join(missing)
+                        ]
+                    if network_ids is not None and not targets:
+                        raise ApiError(
+                            409,
+                            "所选网段当前不可用，请刷新网段后重试",
+                        )
                     devices, probe_warnings = probe_network_devices(targets)
                 finally:
                     inventory_lock.release()
@@ -275,13 +310,18 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
                         400,
                         "MAC suffix must use AA-BB, AA:BB, or AABB format",
                     )
+                network_ids = parse_network_selection(body)
                 inventory_lock = getattr(self.server, "device_scan_lock", None)
                 if inventory_lock is None:
                     inventory_lock = threading.Lock()
                 if not inventory_lock.acquire(blocking=False):
                     raise ApiError(409, "device inventory scan is already running")
                 try:
-                    status, payload = start_scan_result(self._manager(), suffix)
+                    status, payload = start_scan_result(
+                        self._manager(),
+                        suffix,
+                        network_ids,
+                    )
                 finally:
                     inventory_lock.release()
                 self._send_json(status, payload)

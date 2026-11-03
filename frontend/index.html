@@ -166,19 +166,28 @@
             <span class="section-kicker">扫描范围</span>
             <h2 id="networkHeading">活动网段</h2>
           </div>
-          <button
-            id="refreshButton"
-            class="icon-button"
-            type="button"
-            aria-label="刷新网段"
-            data-tooltip="重新读取当前物理网段">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M20 11a8 8 0 0 0-14.8-4"></path>
-              <path d="M4 4v4h4"></path>
-              <path d="M4 13a8 8 0 0 0 14.8 4"></path>
-              <path d="M20 20v-4h-4"></path>
-            </svg>
-          </button>
+          <div class="network-heading-actions">
+            <button
+              id="selectAllNetworksButton"
+              class="network-select-all"
+              type="button"
+              data-tooltip="勾选全部活动网段">
+              全选
+            </button>
+            <button
+              id="refreshButton"
+              class="icon-button"
+              type="button"
+              aria-label="刷新网段"
+              data-tooltip="重新读取当前物理网段">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M20 11a8 8 0 0 0-14.8-4"></path>
+                <path d="M4 4v4h4"></path>
+                <path d="M4 13a8 8 0 0 0 14.8 4"></path>
+                <path d="M20 20v-4h-4"></path>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div id="networkSummary" class="network-summary">正在识别网段</div>

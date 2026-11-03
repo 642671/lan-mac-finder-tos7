@@ -3,6 +3,7 @@
 var APP_ID = "lan-mac-finder";
 var MAC_SUFFIX_PATTERN = /^(?:[0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})$/;
 var SEARCH_INTENT_KEY = "lanMacFinder.searchIntent.v1";
+var NETWORK_SELECTION_KEY = "lanMacFinder.networkSelection.v1";
 var SIDEBAR_WIDTH_KEY = "lanMacFinder.layout.sidebarWidth.v1";
 var SCAN_PANE_HEIGHT_KEY = "lanMacFinder.layout.scanPaneHeight.v1";
 var DEFAULT_SIDEBAR_WIDTH = 304;
@@ -43,6 +44,8 @@ var activeTooltipTarget = null;
 
 var state = {
   networks: [],
+  selectedNetworkIds: [],
+  networkSelectionTouched: false,
   warnings: [],
   devices: [],
   results: [],
@@ -117,6 +120,135 @@ function removeStoredValue(key) {
   } catch (error) {
     return;
   }
+}
+
+function networkKey(network) {
+  if (network && typeof network.network_id === "string" && network.network_id) {
+    return network.network_id;
+  }
+  var interfaceName = network && network.interface ? String(network.interface) : "";
+  var scanRange = network && network.scan_range ? String(network.scan_range) : "";
+  return interfaceName + "|" + scanRange;
+}
+
+function selectedNetworkIds() {
+  var selected = {};
+  state.selectedNetworkIds.forEach(function (id) {
+    selected[id] = true;
+  });
+  return state.networks.map(networkKey).filter(function (id) {
+    return !!selected[id];
+  });
+}
+
+function networkSelectionLocked() {
+  return state.running || state.inventoryScanning || state.stopping;
+}
+
+function reconcileNetworkSelection(networks, selectedIds, touched) {
+  var safeNetworks = Array.isArray(networks) ? networks : [];
+  if (!touched) {
+    return safeNetworks.map(networkKey);
+  }
+  var available = {};
+  safeNetworks.forEach(function (network) {
+    available[networkKey(network)] = true;
+  });
+  var seen = {};
+  var result = [];
+  var requested = Array.isArray(selectedIds) ? selectedIds : [];
+  requested.forEach(function (id) {
+    if (typeof id === "string" && available[id] && !seen[id]) {
+      seen[id] = true;
+      result.push(id);
+    }
+  });
+  return result;
+}
+
+function persistNetworkSelection() {
+  writeStoredJson(NETWORK_SELECTION_KEY, {
+    touched: true,
+    selectedNetworkIds: state.selectedNetworkIds.slice()
+  });
+}
+
+function restoreNetworkSelection() {
+  var stored = readStoredJson(NETWORK_SELECTION_KEY);
+  if (
+    !stored ||
+    stored.touched !== true ||
+    !Array.isArray(stored.selectedNetworkIds)
+  ) {
+    return;
+  }
+  state.networkSelectionTouched = true;
+  state.selectedNetworkIds = stored.selectedNetworkIds.filter(function (id) {
+    return typeof id === "string" && !!id;
+  });
+}
+
+function networkSelectionSummary() {
+  if (!state.networks.length) {
+    return "未发现可扫描网段";
+  }
+  var selectedCount = selectedNetworkIds().length;
+  if (!selectedCount) {
+    return "请至少选择一个活动网段";
+  }
+  return "已选择 " + selectedCount + " / " + state.networks.length + " 个活动网段";
+}
+
+function updateNetworkSummary() {
+  setText("networkSummary", networkSelectionSummary());
+}
+
+function scheduleContinuousAfterSelectionChange() {
+  if (
+    state.continuous &&
+    !state.running &&
+    !state.stopping &&
+    selectedNetworkIds().length
+  ) {
+    scheduleContinuousRestart(250);
+  }
+}
+
+function setNetworkSelection(id, selected) {
+  var networkId = String(id || "");
+  if (!networkId || networkSelectionLocked()) {
+    return;
+  }
+  var lookup = {};
+  state.selectedNetworkIds.forEach(function (value) {
+    lookup[value] = true;
+  });
+  if (selected) {
+    lookup[networkId] = true;
+  } else {
+    delete lookup[networkId];
+  }
+  state.selectedNetworkIds = state.networks.map(networkKey).filter(function (value) {
+    return !!lookup[value];
+  });
+  state.networkSelectionTouched = true;
+  persistNetworkSelection();
+  updateNetworkSummary();
+  updateControls();
+  scheduleContinuousAfterSelectionChange();
+}
+
+function selectAllNetworks() {
+  if (networkSelectionLocked() || !state.networks.length) {
+    return;
+  }
+  state.selectedNetworkIds = state.networks.map(networkKey);
+  state.networkSelectionTouched = true;
+  persistNetworkSelection();
+  renderNetworkList();
+  updateNetworkSummary();
+  updateControls();
+  scheduleContinuousAfterSelectionChange();
 }
 
 function clearContinuousRestart() {
@@ -461,6 +593,10 @@ function iconSvg(children) {
 
 function renderNetworkList() {
   var list = byId("networkList");
+  var selected = {};
+  state.selectedNetworkIds.forEach(function (id) {
+    selected[id] = true;
+  });
   while (list.firstChild) {
     list.removeChild(list.firstChild);
   }
@@ -473,8 +609,25 @@ function renderNetworkList() {
   }
 
   state.networks.forEach(function (network) {
-    var item = document.createElement("div");
-    item.className = "network-item";
+    var networkId = networkKey(network);
+    var isSelected = !!selected[networkId];
+    var item = document.createElement("label");
+    item.className = "network-item " + (isSelected ? "is-selected" : "is-unselected");
+
+    var checkbox = document.createElement("input");
+    checkbox.className = "network-checkbox";
+    checkbox.type = "checkbox";
+    checkbox.checked = isSelected;
+    checkbox.disabled = networkSelectionLocked();
+    checkbox.setAttribute(
+      "aria-label",
+      "扫描网段 " + network.scan_range + "（" + network.interface + "）"
+    );
+    checkbox.addEventListener("change", function () {
+      item.classList.toggle("is-selected", checkbox.checked);
+      item.classList.toggle("is-unselected", !checkbox.checked);
+      setNetworkSelection(networkId, checkbox.checked);
+    });
 
     var icon = document.createElement("div");
     icon.className = "network-item-icon";
@@ -502,6 +655,7 @@ function renderNetworkList() {
     range.className = "network-range";
     range.textContent = network.scan_range;
 
+    item.appendChild(checkbox);
     item.appendChild(icon);
     item.appendChild(copy);
     item.appendChild(range);
@@ -528,13 +682,13 @@ function renderWarnings() {
 
 function setNetworks(payload) {
   state.networks = Array.isArray(payload.networks) ? payload.networks : [];
-  state.warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
-  setText(
-    "networkSummary",
-    state.networks.length
-      ? state.networks.length + " 个活动物理网段"
-      : "未发现可扫描网段"
+  state.selectedNetworkIds = reconcileNetworkSelection(
+    state.networks,
+    state.selectedNetworkIds,
+    state.networkSelectionTouched
   );
+  state.warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+  updateNetworkSummary();
   renderNetworkList();
   renderWarnings();
   updateControls();
@@ -625,14 +779,35 @@ function updateControls() {
   var exportButton = byId("exportButton");
   var clearButton = byId("clearButton");
   var inputClearButton = byId("inputClearButton");
+  var selectAllButton = byId("selectAllNetworksButton");
   var input = byId("macSuffix");
   var searchActive = state.running || state.continuous;
   var busy = searchActive || state.inventoryScanning;
+  var selectedIds = selectedNetworkIds();
+  var hasSelection = selectedIds.length > 0;
+  var selectionLocked = networkSelectionLocked();
 
-  scanButton.disabled = busy;
+  scanButton.disabled = busy || !hasSelection;
   stopButton.disabled = !searchActive || state.stopping;
   refreshButton.disabled = state.running || state.inventoryScanning;
-  emptyRefreshButton.disabled = busy && !state.continuous;
+  emptyRefreshButton.disabled =
+    (busy && !state.continuous) ||
+    (state.tableMode === "devices" && state.networks.length > 0 && !hasSelection);
+  if (selectAllButton) {
+    selectAllButton.disabled = selectionLocked ||
+      !state.networks.length ||
+      selectedIds.length === state.networks.length;
+  }
+  var networkCheckboxes = document.querySelectorAll
+    ? document.querySelectorAll("#networkList .network-checkbox")
+    : [];
+  for (var index = 0; index < networkCheckboxes.length; index += 1) {
+    networkCheckboxes[index].disabled = selectionLocked;
+  }
+  var networkList = byId("networkList");
+  if (networkList) {
+    networkList.classList.toggle("is-locked", selectionLocked);
+  }
   input.disabled = busy;
   inputClearButton.hidden = !input.value.trim();
   copyButton.disabled = !state.selectedMac;
@@ -1006,7 +1181,7 @@ function renderScanStatus(data, notifyTerminal) {
       );
       setText(
         "resultSummary",
-        "已扫描全部活动网段，未找到后缀 " + state.activeSuffix + "。"
+        "已扫描所选网段，未找到后缀 " + state.activeSuffix + "。"
       );
     }
   } else if (state.scanStatus === "stopped") {
@@ -1050,11 +1225,17 @@ function renderScanStatus(data, notifyTerminal) {
       setText("resultSummary", "持续搜索正在准备下一轮扫描。");
     } else if (!state.networks.length) {
       setScanState("error", "没有可扫描网段", "请刷新物理网卡和默认网关。");
+    } else if (!selectedNetworkIds().length) {
+      setScanState(
+        "idle",
+        "请选择网段",
+        "至少选择一个活动网段后即可开始扫描。"
+      );
     } else {
       setScanState(
         "idle",
         "准备就绪",
-        state.networks.length + " 个物理网段可用于扫描。"
+        networkSelectionSummary() + "。"
       );
     }
     if (state.tableMode === "results" && !state.results.length) {
@@ -1136,7 +1317,7 @@ async function refreshNetworks(silent, refreshDeviceList) {
         "idle",
         "准备就绪",
         state.networks.length
-          ? state.networks.length + " 个物理网段可用于扫描。"
+          ? networkSelectionSummary() + "。"
           : "没有找到带默认网关的物理网卡。"
       );
     }
@@ -1171,13 +1352,28 @@ async function refreshDevices(showError) {
   if (state.inventoryScanning) {
     return false;
   }
+  if (!state.networks.length) {
+    setText("resultSummary", "当前没有可扫描的物理网段。");
+    if (showError) {
+      toast("当前没有可扫描的物理网段。", true);
+    }
+    return false;
+  }
+  var networkIds = selectedNetworkIds();
+  if (!networkIds.length) {
+    setText("resultSummary", "请至少选择一个活动网段后刷新设备总表。");
+    if (showError) {
+      toast("请至少选择一个活动网段。", true);
+    }
+    return false;
+  }
   state.inventoryScanning = true;
   updateControls();
   setText("resultSummary", "正在主动探测当前网段内的设备。");
   try {
     var data = await apiRequest(
       "devices/scan",
-      {},
+      { network_ids: networkIds },
       { timeoutMs: INVENTORY_REQUEST_TIMEOUT_MS }
     );
     state.devices = Array.isArray(data.devices) ? data.devices : [];
@@ -1289,6 +1485,13 @@ async function resumeContinuousSearch() {
     scheduleContinuousRestart(nextServiceRetryDelay());
     return;
   }
+  if (!selectedNetworkIds().length) {
+    showContinuousWaiting(
+      "等待选择网段",
+      "持续搜索已保留；请至少勾选一个活动网段，选择后会自动继续。"
+    );
+    return;
+  }
   setBackendState("online", "服务在线");
   await startScan({ continuousCycle: true });
 }
@@ -1369,6 +1572,7 @@ async function startScan(options) {
     }
     return;
   }
+  var networkIds = selectedNetworkIds();
   if (!state.networks.length) {
     state.continuous = true;
     state.activeSuffix = displaySuffix;
@@ -1381,6 +1585,21 @@ async function startScan(options) {
       "当前没有可扫描的物理网段，将持续检查并在网段恢复后继续。"
     );
     scheduleContinuousRestart(nextServiceRetryDelay());
+    return;
+  }
+  if (!networkIds.length) {
+    state.continuous = false;
+    state.running = false;
+    state.scanStatus = "idle";
+    discardSearchIntent();
+    setScanState(
+      "error",
+      "未选择网段",
+      "请至少勾选一个活动网段后再开始扫描。"
+    );
+    setText("resultSummary", "尚未选择扫描范围。");
+    updateControls();
+    toast("请至少选择一个活动网段。", true);
     return;
   }
 
@@ -1407,7 +1626,10 @@ async function startScan(options) {
   updateControls();
 
   try {
-    await apiRequest("scan/start", { suffix: suffix });
+    await apiRequest("scan/start", {
+      suffix: suffix,
+      network_ids: networkIds
+    });
     if (generation !== state.searchGeneration) {
       return;
     }
@@ -1902,6 +2124,7 @@ function bindEvents() {
   byId("refreshButton").addEventListener("click", function () {
     refreshNetworks();
   });
+  byId("selectAllNetworksButton").addEventListener("click", selectAllNetworks);
   byId("emptyRefreshButton").addEventListener("click", function () {
     if (state.continuous) {
       stopScan();
@@ -1958,6 +2181,7 @@ async function boot() {
   bindEvents();
   bindTooltips();
   var restored = restoreSearchIntent();
+  restoreNetworkSelection();
   updateControls();
   var online = await checkBackend(restored);
   if (online) {

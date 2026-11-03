@@ -21,12 +21,16 @@ from lan_mac_finder.core import (  # noqa: E402
     is_virtual_interface,
     match_local_target,
     match_neighbor_records,
+    network_target_key,
+    network_target_payload,
     network_hosts,
     normalize_mac,
     normalize_mac_suffix,
+    normalize_network_ids,
     parse_ipv4_network,
     parse_neighbor_items,
     probe_network_devices,
+    select_network_targets,
 )
 
 
@@ -248,19 +252,83 @@ class NeighborTests(unittest.TestCase):
         self.assertEqual(matches[0]["mac"], "02-42-AC-11-D4-65")
 
 
-class ScanManagerTests(unittest.TestCase):
-    def _target(self) -> NetworkTarget:
+class NetworkSelectionTests(unittest.TestCase):
+    def _target(self, interface: str, local_ip: str) -> NetworkTarget:
+        network = parse_ipv4_network(local_ip, 24)
         return NetworkTarget(
-            interface="enp1s0",
-            alias="enp1s0",
-            local_ip="192.0.2.25",
-            prefix_length=24,
-            gateway="192.0.2.1",
-            network="192.0.2.0",
-            broadcast="192.0.2.255",
-            scan_range="192.0.2.0/24",
-            host_count=254,
-            local_source="192.0.2.25",
+            interface=interface,
+            alias=interface,
+            local_ip=local_ip,
+            prefix_length=network.prefixlen,
+            gateway=str(network.network_address + 1),
+            network=str(network.network_address),
+            broadcast=str(network.broadcast_address),
+            scan_range=str(network),
+            host_count=len(network_hosts(network)),
+            local_source=local_ip,
+            local_mac="02-42-AC-11-00-19",
+        )
+
+    def test_network_payload_has_stable_identifier(self) -> None:
+        target = self._target("enp1s0", "192.0.2.25")
+        self.assertEqual(network_target_key(target), "enp1s0|192.0.2.0/24")
+        self.assertEqual(
+            network_target_payload(target)["network_id"],
+            "enp1s0|192.0.2.0/24",
+        )
+
+    def test_selection_defaults_to_all_networks(self) -> None:
+        targets = [
+            self._target("enp1s0", "192.0.2.25"),
+            self._target("enp2s0", "198.51.100.40"),
+        ]
+        selected, missing = select_network_targets(targets, None)
+        self.assertEqual(selected, targets)
+        self.assertEqual(missing, [])
+
+    def test_selection_filters_targets_and_reports_missing(self) -> None:
+        first = self._target("enp1s0", "192.0.2.25")
+        second = self._target("enp2s0", "198.51.100.40")
+        selected, missing = select_network_targets(
+            [first, second],
+            [network_target_key(second)],
+        )
+        self.assertEqual(selected, [second])
+        self.assertEqual(missing, [])
+
+        selected, missing = select_network_targets(
+            [first, second],
+            [network_target_key(second), "enp9s0|203.0.113.0/24"],
+        )
+        self.assertEqual(selected, [second])
+        self.assertEqual(missing, ["enp9s0|203.0.113.0/24"])
+
+    def test_network_ids_require_a_non_empty_string_array(self) -> None:
+        self.assertIsNone(normalize_network_ids(None))
+        self.assertEqual(normalize_network_ids(["a", "a", "b"]), ["a", "b"])
+        for value in ([], "", "enp1s0|192.0.2.0/24", [1], ["  "]):
+            with self.assertRaises(ValueError):
+                normalize_network_ids(value)
+
+
+class ScanManagerTests(unittest.TestCase):
+    def _target(
+        self,
+        interface: str = "enp1s0",
+        local_ip: str = "192.0.2.25",
+    ) -> NetworkTarget:
+        network = parse_ipv4_network(local_ip, 24)
+        return NetworkTarget(
+            interface=interface,
+            alias=interface,
+            local_ip=local_ip,
+            prefix_length=network.prefixlen,
+            gateway=str(network.network_address + 1),
+            network=str(network.network_address),
+            broadcast=str(network.broadcast_address),
+            scan_range=str(network),
+            host_count=len(network_hosts(network)),
+            local_source=local_ip,
             local_mac="02-42-AC-11-00-19",
         )
 
@@ -290,6 +358,87 @@ class ScanManagerTests(unittest.TestCase):
         self.assertEqual(status["probed_hosts"], 254)
         self.assertEqual(status["results"][0]["mac"], "02-42-AC-11-45-6A")
 
+    def test_scan_manager_defaults_to_all_networks(self) -> None:
+        targets = [
+            self._target("enp1s0", "192.0.2.25"),
+            self._target("enp2s0", "198.51.100.40"),
+        ]
+        sweep_calls = []
+
+        def sweep(target, cancel_event, progress):
+            sweep_calls.append(target.scan_range)
+            progress(target.host_count)
+            return True
+
+        manager = ScanManager(
+            discover=lambda: (targets, []),
+            neighbors=lambda interface: [],
+            sweep=sweep,
+        )
+        self.assertTrue(manager.start("456A"))
+        manager.wait(2)
+        status = manager.status()
+        self.assertEqual(status["status"], "completed")
+        self.assertEqual(sweep_calls, ["192.0.2.0/24", "198.51.100.0/24"])
+        self.assertEqual(status["total_hosts"], 508)
+        self.assertEqual(len(status["selected_network_ids"]), 2)
+
+    def test_scan_manager_only_scans_selected_network(self) -> None:
+        first = self._target("enp1s0", "192.0.2.25")
+        second = self._target("enp2s0", "198.51.100.40")
+        selected = [network_target_key(second)]
+        sweep_calls = []
+
+        def sweep(target, cancel_event, progress):
+            sweep_calls.append(target.scan_range)
+            progress(target.host_count)
+            return True
+
+        manager = ScanManager(
+            discover=lambda: ([first, second], []),
+            neighbors=lambda interface: [],
+            sweep=sweep,
+        )
+        self.assertTrue(manager.start("456A", selected))
+        manager.wait(2)
+        status = manager.status()
+        self.assertEqual(status["status"], "completed")
+        self.assertEqual(sweep_calls, ["198.51.100.0/24"])
+        self.assertEqual(status["total_hosts"], 254)
+        self.assertEqual(status["selected_network_ids"], selected)
+        self.assertEqual(
+            [network["network_id"] for network in status["networks"]],
+            selected,
+        )
+
+    def test_scan_manager_rejects_empty_selection(self) -> None:
+        manager = ScanManager(
+            discover=lambda: ([self._target()], []),
+            neighbors=lambda interface: [],
+            sweep=lambda *args: True,
+        )
+        with self.assertRaises(ValueError):
+            manager.start("456A", [])
+
+    def test_scan_manager_reports_unavailable_selection_without_scanning(self) -> None:
+        sweep_calls = []
+
+        def sweep(target, cancel_event, progress):
+            sweep_calls.append(target.scan_range)
+            return True
+
+        manager = ScanManager(
+            discover=lambda: ([self._target()], []),
+            neighbors=lambda interface: [],
+            sweep=sweep,
+        )
+        self.assertTrue(manager.start("456A", ["enp9s0|203.0.113.0/24"]))
+        manager.wait(2)
+        status = manager.status()
+        self.assertEqual(status["status"], "error")
+        self.assertIn("所选网段当前不可用", status["error"])
+        self.assertEqual(sweep_calls, [])
+
     def test_scan_manager_rejects_parallel_start_without_replacing_job(self) -> None:
         started = threading.Event()
 
@@ -310,6 +459,32 @@ class ScanManagerTests(unittest.TestCase):
         active = manager.status()
         self.assertEqual(active["suffix"], "456A")
         self.assertEqual(active["job_id"], first_job_id)
+        self.assertTrue(manager.stop())
+        manager.wait(2)
+
+    def test_scan_manager_matches_active_request_scope(self) -> None:
+        targets = [
+            self._target("enp1s0", "192.0.2.25"),
+            self._target("enp2s0", "198.51.100.40"),
+        ]
+        selected = [network_target_key(target) for target in targets]
+        started = threading.Event()
+
+        def sweep(target, cancel_event, progress):
+            started.set()
+            cancel_event.wait(1)
+            return True
+
+        manager = ScanManager(
+            discover=lambda: (targets, []),
+            neighbors=lambda interface: [],
+            sweep=sweep,
+        )
+        self.assertTrue(manager.start("456A", selected))
+        self.assertTrue(started.wait(1))
+        self.assertTrue(manager.matches_request("45:6a", list(reversed(selected))))
+        self.assertFalse(manager.matches_request("456A", [selected[0]]))
+        self.assertFalse(manager.matches_request("456A"))
         self.assertTrue(manager.stop())
         manager.wait(2)
 

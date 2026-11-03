@@ -20,6 +20,7 @@ PREVIEW_VERSION = APP_VERSION + "-preview"
 NETWORKS = [
     {
         "interface": "enp1s0",
+        "network_id": "enp1s0|192.0.2.0/24",
         "alias": "enp1s0",
         "local_ip": "192.0.2.25",
         "prefix_length": 24,
@@ -33,6 +34,7 @@ NETWORKS = [
     },
     {
         "interface": "enp2s0",
+        "network_id": "enp2s0|198.51.100.0/24",
         "alias": "enp2s0",
         "local_ip": "198.51.100.40",
         "prefix_length": 24,
@@ -99,6 +101,40 @@ DEVICES = [
 ]
 
 
+def network_key(network: dict) -> str:
+    return str(
+        network.get("network_id")
+        or f"{network.get('interface', '')}|{network.get('scan_range', '')}"
+    )
+
+
+def normalize_selected_ids(value: object) -> list[str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value:
+        raise ValueError("至少选择一个网段")
+    selected: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("网段选择格式不正确")
+        text = item.strip()
+        if text not in selected:
+            selected.append(text)
+    return selected
+
+
+def select_preview_networks(
+    network_ids: list[str] | None,
+) -> tuple[list[dict], list[str]]:
+    if network_ids is None:
+        return list(NETWORKS), []
+    wanted = set(network_ids)
+    selected = [network for network in NETWORKS if network_key(network) in wanted]
+    available = {network_key(network) for network in NETWORKS}
+    missing = [network_id for network_id in network_ids if network_id not in available]
+    return selected, missing
+
+
 class PreviewState:
     def __init__(self, no_match: bool = False) -> None:
         self.lock = threading.Lock()
@@ -115,6 +151,8 @@ class PreviewState:
             "stopping": False,
             "job_id": "",
             "suffix": "",
+            "selected_network_ids": [],
+            "requested_network_ids": None,
             "started_at": None,
             "finished_at": None,
             "networks": [],
@@ -132,7 +170,12 @@ class PreviewState:
         with self.lock:
             return json.loads(json.dumps(self.data))
 
-    def start(self, suffix: str) -> bool:
+    def start(
+        self,
+        suffix: str,
+        networks: list[dict],
+        requested_network_ids: list[str] | None = None,
+    ) -> bool:
         with self.lock:
             if self.data["running"]:
                 return False
@@ -144,57 +187,99 @@ class PreviewState:
                     "status": "discovering",
                     "running": True,
                     "suffix": suffix,
+                    "selected_network_ids": [network_key(network) for network in networks],
+                    "requested_network_ids": (
+                        None
+                        if requested_network_ids is None
+                        else list(requested_network_ids)
+                    ),
                     "job_id": f"preview-{self.job_sequence}",
                     "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 }
             )
         threading.Thread(
             target=self._run,
-            args=(suffix, self.cancel),
+            args=(suffix, self.cancel, networks),
             daemon=True,
             name="preview-scan",
         ).start()
         return True
+
+    def matches_request(
+        self,
+        suffix: str,
+        network_ids: list[str] | None = None,
+    ) -> bool:
+        with self.lock:
+            if self.data["suffix"] != suffix:
+                return False
+            active = self.data.get("requested_network_ids")
+            if active is None or network_ids is None:
+                return active is None and network_ids is None
+            return set(active) == set(network_ids)
 
     def stop(self) -> None:
         with self.lock:
             self.data["stopping"] = True
         self.cancel.set()
 
-    def _run(self, suffix: str, cancel: threading.Event) -> None:
+    def _run(
+        self,
+        suffix: str,
+        cancel: threading.Event,
+        networks: list[dict],
+    ) -> None:
         time.sleep(0.35)
         if cancel.is_set():
             self._finish("stopped")
             return
+        if not networks:
+            with self.lock:
+                self.data["error"] = "????????"
+            self._finish("error")
+            return
+        total = sum(max(0, int(network.get("host_count") or 0)) for network in networks)
+        first = networks[0]
         with self.lock:
             self.data.update(
                 {
                     "status": "scanning",
-                    "networks": NETWORKS,
-                    "total_hosts": 508,
-                    "current_interface": "enp1s0",
-                    "current_range": "192.0.2.0/24",
+                    "networks": networks,
+                    "selected_network_ids": [network_key(network) for network in networks],
+                    "total_hosts": total,
+                    "current_interface": first["interface"],
+                    "current_range": first["scan_range"],
                 }
             )
-        for completed in (64, 128, 192, 254, 318, 382, 446, 508):
-            if cancel.is_set():
-                self._finish("stopped")
-                return
-            time.sleep(0.12)
-            with self.lock:
-                self.data["probed_hosts"] = completed
-                self.data["progress_percent"] = int(completed * 100 / 508)
-                if completed > 254:
-                    self.data["current_interface"] = "enp2s0"
-                    self.data["current_range"] = "198.51.100.0/24"
+        probed_before = 0
+        for network in networks:
+            host_count = max(0, int(network.get("host_count") or 0))
+            for step in range(1, 5):
+                if cancel.is_set():
+                    self._finish("stopped")
+                    return
+                time.sleep(0.12)
+                completed = probed_before + (host_count * step // 4)
+                with self.lock:
+                    self.data["probed_hosts"] = completed
+                    self.data["progress_percent"] = (
+                        100 if total <= 0 else int(completed * 100 / total)
+                    )
+                    self.data["current_interface"] = network["interface"]
+                    self.data["current_range"] = network["scan_range"]
+            probed_before += host_count
         if not self.no_match:
-            first_mac = f"02-42-AC-11-{suffix[:2]}-{suffix[2:]}"
+            network = networks[0]
+            local_mac = str(network.get("local_mac") or "02-42-AC-11-00-19")
+            first_mac = "-".join(
+                local_mac.split("-")[:4] + [suffix[:2], suffix[2:]]
+            )
             with self.lock:
                 self.data["results"] = [
                     {
-                        "interface": "enp1s0",
-                        "scan_range": "192.0.2.0/24",
-                        "ip": "192.0.2.88",
+                        "interface": network["interface"],
+                        "scan_range": network["scan_range"],
+                        "ip": network["local_ip"],
                         "mac": first_mac,
                         "state": "LOCAL",
                     },
@@ -215,7 +300,7 @@ class PreviewState:
             )
             if status == "completed":
                 self.data["progress_percent"] = 100
-                self.data["probed_hosts"] = 508
+                self.data["probed_hosts"] = int(self.data.get("total_hosts") or 0)
 
 
 STATE = PreviewState()
@@ -322,14 +407,35 @@ class PreviewHandler(SimpleHTTPRequestHandler):
         parts = api_parts(self.path)
         body = self._read_body()
         if parts == ["devices", "scan"]:
+            try:
+                network_ids = normalize_selected_ids(body.get("network_ids"))
+            except ValueError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            networks, missing = select_preview_networks(network_ids)
+            if network_ids is not None and not networks:
+                self._json(
+                    409,
+                    {"ok": False, "error": "所选网段当前不可用，请刷新网段后重试"},
+                )
+                return
+            selected_keys = {network_key(network) for network in networks}
+            devices = [
+                device
+                for device in DEVICES
+                if f"{device['interface']}|{device['scan_range']}" in selected_keys
+            ]
+            warnings = (
+                ["所选网段当前不可用：" + "、".join(missing)] if missing else []
+            )
             self._json(
                 200,
                 {
                     "ok": True,
                     "app": APP_ID,
                     "version": PREVIEW_VERSION,
-                    "devices": DEVICES,
-                    "warnings": [],
+                    "devices": devices,
+                    "warnings": warnings,
                 },
             )
             return
@@ -338,14 +444,26 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             if len(suffix) != 4:
                 self._json(400, {"ok": False, "error": "invalid suffix"})
                 return
-            started = STATE.start(suffix)
+            try:
+                network_ids = normalize_selected_ids(body.get("network_ids"))
+            except ValueError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            networks, missing = select_preview_networks(network_ids)
+            if network_ids is not None and not networks:
+                self._json(
+                    409,
+                    {"ok": False, "error": "所选网段当前不可用，请刷新网段后重试"},
+                )
+                return
+            started = STATE.start(suffix, networks, network_ids)
             actual = STATE.status()
-            if not started and actual.get("suffix") != suffix:
+            if not started and not STATE.matches_request(suffix, network_ids):
                 self._json(
                     409,
                     {
                         "ok": False,
-                        "error": "another MAC suffix is already being scanned",
+                        "error": "another scan is already running with a different scope",
                     },
                 )
                 return
@@ -359,6 +477,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                     "status": actual.get("status"),
                     "job_id": actual.get("job_id", ""),
                     "suffix": actual.get("suffix", ""),
+                    "selected_network_ids": actual.get("selected_network_ids", []),
                 },
             )
             return

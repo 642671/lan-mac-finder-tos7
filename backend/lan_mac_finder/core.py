@@ -21,6 +21,8 @@ from typing import Callable, Iterable, Sequence
 APP_ID = "lan-mac-finder"
 DEFAULT_MAX_HOSTS = 1022
 DEFAULT_CONCURRENCY = 64
+MAX_NETWORK_SELECTION = 64
+MAX_NETWORK_ID_LENGTH = 256
 ALLOWED_NEIGHBOR_STATES = {"REACHABLE", "STALE", "DELAY", "PROBE"}
 MAC_SUFFIX_PATTERN = re.compile(
     r"^(?:[0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})$"
@@ -69,6 +71,55 @@ class NetworkTarget:
 
     def as_dict(self) -> dict:
         return asdict(self)
+
+
+def network_target_key(target: NetworkTarget) -> str:
+    return f"{target.interface}|{target.scan_range}"
+
+
+def network_target_payload(target: NetworkTarget) -> dict:
+    payload = target.as_dict()
+    payload["network_id"] = network_target_key(target)
+    return payload
+
+
+def normalize_network_ids(value: object) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, str) or not isinstance(value, (list, tuple)):
+        raise ValueError("network_ids 必须是数组")
+    selected: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise ValueError("network_ids 只能包含字符串")
+        text = item.strip()
+        if not text:
+            raise ValueError("network_ids 不能包含空值")
+        if len(text) > MAX_NETWORK_ID_LENGTH:
+            raise ValueError("网段标识过长")
+        if text not in selected:
+            selected.append(text)
+    if not selected:
+        raise ValueError("至少选择一个网段")
+    if len(selected) > MAX_NETWORK_SELECTION:
+        raise ValueError(f"最多选择 {MAX_NETWORK_SELECTION} 个网段")
+    return selected
+
+
+def select_network_targets(
+    targets: Sequence[NetworkTarget],
+    network_ids: Sequence[str] | None,
+) -> tuple[list[NetworkTarget], list[str]]:
+    available = list(targets)
+    if network_ids is None:
+        return available, []
+    wanted = set(network_ids)
+    available_ids = {network_target_key(target) for target in available}
+    selected = [
+        target for target in available if network_target_key(target) in wanted
+    ]
+    missing = [network_id for network_id in network_ids if network_id not in available_ids]
+    return selected, missing
 
 
 @dataclass(frozen=True)
@@ -626,6 +677,7 @@ class ScanManager:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._cancel = threading.Event()
+        self._requested_network_ids: list[str] | None = None
         self._state = self._idle_state()
 
     @staticmethod
@@ -636,6 +688,7 @@ class ScanManager:
             "stopping": False,
             "job_id": "",
             "suffix": "",
+            "selected_network_ids": [],
             "started_at": None,
             "finished_at": None,
             "networks": [],
@@ -652,18 +705,31 @@ class ScanManager:
     def status(self) -> dict:
         with self._lock:
             snapshot = dict(self._state)
+            snapshot["selected_network_ids"] = list(
+                self._state["selected_network_ids"]
+            )
             snapshot["networks"] = [dict(item) for item in self._state["networks"]]
             snapshot["warnings"] = list(self._state["warnings"])
             snapshot["results"] = [dict(item) for item in self._state["results"]]
             return snapshot
 
-    def start(self, suffix: str) -> bool:
+    def start(
+        self,
+        suffix: str,
+        network_ids: Sequence[str] | None = None,
+    ) -> bool:
         normalized = normalize_mac_suffix(suffix)
         if normalized is None:
             raise ValueError("MAC suffix must be AA-BB, AA:BB, or AABB")
+        selected_network_ids = normalize_network_ids(network_ids)
         with self._lock:
             if self._state["running"]:
                 return False
+            self._requested_network_ids = (
+                list(selected_network_ids)
+                if selected_network_ids is not None
+                else None
+            )
             self._cancel = threading.Event()
             self._state = self._idle_state()
             self._state.update(
@@ -672,17 +738,38 @@ class ScanManager:
                     "running": True,
                     "job_id": uuid.uuid4().hex,
                     "suffix": normalized,
+                    "selected_network_ids": selected_network_ids or [],
                     "started_at": datetime.now().isoformat(timespec="seconds"),
                 }
             )
             self._thread = threading.Thread(
                 target=self._run,
-                args=(self._state["job_id"], normalized, self._cancel),
+                args=(
+                    self._state["job_id"],
+                    normalized,
+                    self._cancel,
+                    selected_network_ids,
+                ),
                 name="lan-mac-scan",
                 daemon=True,
             )
             self._thread.start()
         return True
+
+    def matches_request(
+        self,
+        suffix: str,
+        network_ids: Sequence[str] | None = None,
+    ) -> bool:
+        normalized = normalize_mac_suffix(suffix)
+        requested = normalize_network_ids(network_ids)
+        with self._lock:
+            if self._state["suffix"] != normalized:
+                return False
+            active = self._requested_network_ids
+            if active is None or requested is None:
+                return active is None and requested is None
+            return set(active) == set(requested)
 
     def stop(self) -> bool:
         with self._lock:
@@ -715,13 +802,21 @@ class ScanManager:
         job_id: str,
         suffix: str,
         cancel_event: threading.Event,
+        selected_network_ids: list[str] | None,
     ) -> None:
         try:
             targets, warnings = self._discover()
+            targets, missing = select_network_targets(targets, selected_network_ids)
+            if missing:
+                warnings = warnings + ["所选网段当前不可用：" + "、".join(missing)]
             if cancel_event.is_set():
                 raise ScanCancelled("scan stopped")
             if not targets:
-                message = warnings[0] if warnings else "no scannable physical networks"
+                message = (
+                    "所选网段当前不可用，请刷新网段后重试"
+                    if selected_network_ids is not None
+                    else (warnings[0] if warnings else "no scannable physical networks")
+                )
                 self._update(
                     status="error",
                     running=False,
@@ -734,7 +829,10 @@ class ScanManager:
             total = sum(target.host_count for target in targets)
             self._update(
                 status="scanning",
-                networks=[target.as_dict() for target in targets],
+                networks=[network_target_payload(target) for target in targets],
+                selected_network_ids=[
+                    network_target_key(target) for target in targets
+                ],
                 warnings=warnings,
                 total_hosts=total,
             )

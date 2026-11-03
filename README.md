@@ -3,7 +3,7 @@
 `lan-mac-finder` is a TOS 7 iframe Deb application for finding devices in the
 NAS's current physical LAN by the last four characters of their MAC address.
 
-Current version: `1.0.008`.
+Current version: `1.0.009`.
 
 ## Features
 
@@ -11,6 +11,10 @@ Current version: `1.0.008`.
 - Exclude common virtual interfaces such as Docker, veth, VM, Tailscale, TUN,
   TAP, WireGuard, and ZeroTier.
 - Calculate the real network and broadcast address from each interface prefix.
+- Discover every routed physical IPv4 network. All networks are selected by
+  default, and the active-network list can scan one or several selected ranges.
+- Keep the selected network scope across WebUI reloads and continuous-search
+  cycles, and apply it to both MAC matching and device inventory scans.
 - Reject oversized scan ranges with a configurable safety limit.
 - Probe hosts in the background, never blocking the WebUI.
 - Prime the kernel neighbor table with empty UDP datagrams and use ICMP ping
@@ -22,8 +26,9 @@ Current version: `1.0.008`.
   overlong fragments immediately and exposing the error state to assistive
   technology.
 - Show the complete accepted-format hint directly inside the empty input.
-- Actively probe every scannable host on startup and refresh, then show the
-  complete discovered inventory as the device overview before searching.
+- Actively probe every scannable host in the selected networks on startup and
+  refresh, then show the discovered inventory as the device overview before
+  searching.
 - Include each physical interface's own MAC as a `LOCAL` device.
 - Clear the search field to return immediately to the unfiltered device overview.
 - Keep a submitted non-empty suffix searching automatically. A cycle refreshes
@@ -67,6 +72,21 @@ POST /scan/start
 GET  /scan/status
 POST /scan/stop
 ```
+
+`POST /scan/start` and `POST /devices/scan` accept an optional `network_ids`
+array. Each value is the `network_id` returned by `GET /networks`, for example
+`enp1s0|192.0.2.0/24`:
+
+```json
+{
+  "suffix": "456A",
+  "network_ids": ["enp1s0|192.0.2.0/24", "enp2s0|198.51.100.0/24"]
+}
+```
+
+Omitting `network_ids` preserves the original behavior and scans every
+discovered network. An explicit empty array is rejected, and unavailable
+selected networks never fall back to scanning unselected ranges.
 
 The WebUI uses the TOS proxy prefix:
 

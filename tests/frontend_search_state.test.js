@@ -68,3 +68,54 @@ test("continuous results survive only while the next cycle is still running", ()
     false
   );
 });
+
+test("network selection defaults to all and keeps an explicit subset", () => {
+  const networks = [{
+    interface: "enp1s0",
+    scan_range: "192.0.2.0/24",
+    network_id: "enp1s0|192.0.2.0/24"
+  }, {
+    interface: "enp2s0",
+    scan_range: "198.51.100.0/24",
+    network_id: "enp2s0|198.51.100.0/24"
+  }];
+
+  assert.equal(context.networkKey(networks[0]), "enp1s0|192.0.2.0/24");
+  assert.equal(
+    JSON.stringify(context.reconcileNetworkSelection(networks, [], false)),
+    JSON.stringify([
+      "enp1s0|192.0.2.0/24",
+      "enp2s0|198.51.100.0/24"
+    ])
+  );
+  assert.equal(
+    JSON.stringify(context.reconcileNetworkSelection(
+      networks,
+      ["enp2s0|198.51.100.0/24", "missing|203.0.113.0/24"],
+      true
+    )),
+    JSON.stringify(["enp2s0|198.51.100.0/24"])
+  );
+});
+
+test("selected network ids ignore stale entries", () => {
+  context.state.networks = [{
+    interface: "enp1s0",
+    scan_range: "192.0.2.0/24"
+  }, {
+    interface: "enp2s0",
+    scan_range: "198.51.100.0/24"
+  }];
+  context.state.selectedNetworkIds = [
+    "enp2s0|198.51.100.0/24",
+    "missing|203.0.113.0/24"
+  ];
+
+  assert.equal(
+    JSON.stringify(context.selectedNetworkIds()),
+    JSON.stringify(["enp2s0|198.51.100.0/24"])
+  );
+
+  context.state.networks = [];
+  context.state.selectedNetworkIds = [];
+});
