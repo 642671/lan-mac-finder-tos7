@@ -119,3 +119,105 @@ test("selected network ids ignore stale entries", () => {
   context.state.networks = [];
   context.state.selectedNetworkIds = [];
 });
+
+test("table filter matches multiple fields and MAC separator variants", () => {
+  const items = [{
+    interface: "enp1s0",
+    scan_range: "192.0.2.0/24",
+    ip: "192.0.2.9",
+    mac: "02-42-AC-11-00-09",
+    state: "REACHABLE"
+  }, {
+    interface: "enp1s0",
+    scan_range: "192.0.2.0/24",
+    ip: "192.0.2.100",
+    mac: "02-42-AC-11-00-10",
+    state: "LOCAL"
+  }, {
+    interface: "enp2s0",
+    scan_range: "198.51.100.0/24",
+    ip: "198.51.100.20",
+    mac: "02-42-AC-11-00-20",
+    state: "STALE"
+  }];
+
+  assert.deepEqual(
+    context.filterTableRows(items, "enp1 192.0.2").map((item) => item.ip),
+    ["192.0.2.9", "192.0.2.100"]
+  );
+  assert.deepEqual(
+    context.filterTableRows(items, "00:10").map((item) => item.ip),
+    ["192.0.2.100"]
+  );
+  assert.deepEqual(
+    context.filterTableRows(items, "本机").map((item) => item.ip),
+    ["192.0.2.100"]
+  );
+  assert.equal(context.filterTableRows(items, "   ").length, 3);
+
+  context.state.tableQuery = "   ";
+  assert.equal(context.tableQueryActive(), false);
+  context.state.tableQuery = "";
+});
+
+test("table sorting uses numeric IPv4 order and preserves the source array", () => {
+  const items = [
+    { ip: "192.0.2.100" },
+    { ip: "192.0.2.9" },
+    { ip: "192.0.2.20" }
+  ];
+
+  assert.deepEqual(
+    context.sortTableRows(items, "ip", "ascending").map((item) => item.ip),
+    ["192.0.2.9", "192.0.2.20", "192.0.2.100"]
+  );
+  assert.deepEqual(
+    context.sortTableRows(items, "ip", "descending").map((item) => item.ip),
+    ["192.0.2.100", "192.0.2.20", "192.0.2.9"]
+  );
+  assert.deepEqual(items.map((item) => item.ip), [
+    "192.0.2.100",
+    "192.0.2.9",
+    "192.0.2.20"
+  ]);
+  assert.deepEqual(
+    context.sortTableRows(items, "unknown", "ascending").map((item) => item.ip),
+    items.map((item) => item.ip)
+  );
+});
+
+test("visible table rows combine filtering and sorting", () => {
+  context.state.tableMode = "devices";
+  context.state.devices = [{
+    interface: "enp1s0",
+    scan_range: "192.0.2.0/24",
+    ip: "192.0.2.9",
+    mac: "02-42-AC-11-00-09",
+    state: "REACHABLE"
+  }, {
+    interface: "enp1s0",
+    scan_range: "192.0.2.0/24",
+    ip: "192.0.2.100",
+    mac: "02-42-AC-11-00-10",
+    state: "LOCAL"
+  }, {
+    interface: "enp2s0",
+    scan_range: "198.51.100.0/24",
+    ip: "198.51.100.20",
+    mac: "02-42-AC-11-00-20",
+    state: "STALE"
+  }];
+  context.state.tableQuery = "enp1";
+  context.state.tableSortKey = "ip";
+  context.state.tableSortDirection = "descending";
+
+  assert.deepEqual(
+    context.visibleTableRows().map((item) => item.ip),
+    ["192.0.2.100", "192.0.2.9"]
+  );
+
+  context.state.devices = [];
+  context.state.tableQuery = "";
+  context.state.tableSortKey = "";
+  context.state.tableSortDirection = "ascending";
+});

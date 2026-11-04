@@ -289,15 +289,55 @@
       </header>
 
       <section class="results-surface" aria-label="结果表格">
+        <div id="tableToolbar" class="table-toolbar" hidden>
+          <div class="table-filter">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="10.5" cy="10.5" r="6.5"></circle>
+              <path d="m15.3 15.3 5.2 5.2"></path>
+            </svg>
+            <input
+              id="tableFilter"
+              type="search"
+              placeholder="筛选 IP、MAC、网卡或网段"
+              aria-label="筛选当前设备表格"
+              aria-controls="resultsBody"
+              autocomplete="off"
+              spellcheck="false">
+            <button
+              id="tableFilterClear"
+              class="table-filter-clear"
+              type="button"
+              aria-label="清除表格筛选"
+              data-tooltip="清除表格筛选"
+              hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M6 6 18 18"></path>
+                <path d="M18 6 6 18"></path>
+              </svg>
+            </button>
+          </div>
+          <span id="tableFilterSummary" class="table-filter-summary" aria-live="polite"></span>
+        </div>
+
         <div id="tableWrap" class="table-wrap" hidden>
           <table class="results-table">
             <thead>
               <tr>
-                <th scope="col">网卡</th>
-                <th scope="col">扫描范围</th>
-                <th scope="col">IP 地址</th>
-                <th scope="col">MAC 地址</th>
-                <th scope="col">状态</th>
+                <th scope="col" data-sort-key="interface" aria-sort="none">
+                  <button class="sort-button" type="button" data-sort-key="interface">网卡</button>
+                </th>
+                <th scope="col" data-sort-key="scan_range" aria-sort="none">
+                  <button class="sort-button" type="button" data-sort-key="scan_range">扫描范围</button>
+                </th>
+                <th scope="col" data-sort-key="ip" aria-sort="none">
+                  <button class="sort-button" type="button" data-sort-key="ip">IP 地址</button>
+                </th>
+                <th scope="col" data-sort-key="mac" aria-sort="none">
+                  <button class="sort-button" type="button" data-sort-key="mac">MAC 地址</button>
+                </th>
+                <th scope="col" data-sort-key="state" aria-sort="none">
+                  <button class="sort-button" type="button" data-sort-key="state">状态</button>
+                </th>
               </tr>
             </thead>
             <tbody id="resultsBody"></tbody>

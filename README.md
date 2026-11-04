@@ -3,7 +3,7 @@
 `lan-mac-finder` is a TOS 7 iframe Deb application for finding devices in the
 NAS's current physical LAN by the last four characters of their MAC address.
 
-Current version: `1.0.009`.
+Current version: `1.0.010`.
 
 ## Features
 
@@ -31,6 +31,11 @@ Current version: `1.0.009`.
   searching.
 - Include each physical interface's own MAC as a `LOCAL` device.
 - Clear the search field to return immediately to the unfiltered device overview.
+- Filter the visible device overview or match table by IP, MAC, interface,
+  scan range, or state. Space-separated terms must all match, and MAC fragments
+  accept either `-` or `:` separators.
+- Sort every table column in ascending or descending order, with numeric IPv4
+  and network ordering instead of plain string ordering.
 - Keep a submitted non-empty suffix searching automatically. A cycle refreshes
   physical networks, retains the latest match while the next scan is running,
   shows the no-match state when a completed scan returns no devices, retries
@@ -38,7 +43,8 @@ Current version: `1.0.009`.
 - Resize the navigation and scan/network boundaries with the mouse, touch, or
   keyboard while preserving minimum content sizes.
 - Copy either the selected device's IP or MAC address.
-- Export the current device or match table to UTF-8 CSV for Excel with `Ctrl+E`.
+- Export the currently visible, filtered and sorted device or match table to
+  UTF-8 CSV for Excel with `Ctrl+E`.
 - Follow the TOS `themeMode` on startup and provide a directly clickable
   application theme toggle.
 - Version-bump the packaged icon mtime so TOS navigation cache-busts updated
@@ -54,6 +60,23 @@ do not contain data from a real NAS or customer network.
 ![LAN MAC Finder light theme](docs/screenshots/light.png)
 
 ![LAN MAC Finder dark theme](docs/screenshots/dark.png)
+
+## Design references
+
+The table workflow was reviewed against public network scanners:
+
+- [arp-scan](https://github.com/royhills/arp-scan) for full-inventory output
+  and scan clarity.
+- [network_scanner](https://github.com/parvez/network_scanner) for
+  multi-network device-list workflows.
+- [python-network-scanner](https://github.com/devmarcstorm/python-network-scanner)
+  for device table filtering and selection patterns.
+- [TOS app package tools](https://github.com/terramaster-tos/tos-app-pkg-tools)
+  for the current TOS 7 packaging contract.
+
+These projects are interaction references only. No GPL code or OUI database
+from `arp-scan` is included, and the app does not add `nmap` or another runtime
+dependency.
 
 ## How it works
 
@@ -119,8 +142,9 @@ Run the unit tests:
 
 ```powershell
 py -3 -m unittest discover -s backend/tests -v
+node --check frontend/csv.js
 node --check frontend/app.js
-node --test tests/frontend_search_state.test.js
+node --test tests/frontend_csv.test.js tests/frontend_search_state.test.js
 ```
 
 Compile-check the backend:
@@ -152,7 +176,7 @@ Generated packages and SHA256 files are written to `dist/`.
 For a test NAS:
 
 ```bash
-sudo dpkg -i lan-mac-finder_1.0.008_x86_64.deb
+sudo dpkg -i lan-mac-finder_1.0.010_x86_64.deb
 systemctl status lanmacfinder-system.service
 curl --unix-socket /var/api/lan-mac-finder.sock http://localhost/health
 ```
@@ -186,13 +210,15 @@ Before a versioned release, update:
 - `DEBIAN/control`
 - `backend/lan_mac_finder/__init__.py`
 - `CHANGELOG.md`
+- `README.md`
+- `lan-mac-finder.lang`
 
 Then run tests, build both architectures, commit, tag, and push:
 
 ```powershell
 git add -A
-git commit -m "release: v1.0.008"
+git commit -m "release: v1.0.010"
 git push origin main
-git tag -a v1.0.008 -m "LAN MAC Finder v1.0.008"
-git push origin v1.0.008
+git tag -a v1.0.010 -m "LAN MAC Finder v1.0.010"
+git push origin v1.0.010
 ```

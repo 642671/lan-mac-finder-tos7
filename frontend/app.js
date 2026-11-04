@@ -17,6 +17,13 @@ var CONTINUOUS_RESTART_DELAY_MS = 1100;
 var SERVICE_RETRY_DELAY_MS = 2200;
 var REQUEST_TIMEOUT_MS = 12000;
 var INVENTORY_REQUEST_TIMEOUT_MS = 45000;
+var TABLE_SORT_KEYS = {
+  interface: true,
+  scan_range: true,
+  ip: true,
+  mac: true,
+  state: true
+};
 var DEFAULT_INPUT_ERROR =
   "请输入 AA-BB、AA:BB 或 AABB 格式的 MAC 后四位。";
 var API_CANDIDATES = (function buildCandidates() {
@@ -51,6 +58,9 @@ var state = {
   results: [],
   tableSignature: "",
   tableMode: "devices",
+  tableQuery: "",
+  tableSortKey: "",
+  tableSortDirection: "ascending",
   selectedMac: "",
   selectedIp: "",
   selectedKey: "",
@@ -786,6 +796,10 @@ function updateControls() {
   var selectedIds = selectedNetworkIds();
   var hasSelection = selectedIds.length > 0;
   var selectionLocked = networkSelectionLocked();
+  var visibleRows = visibleTableRows();
+  var filteredEmpty = tableQueryActive() &&
+    rawTableRows().length > 0 &&
+    visibleRows.length === 0;
 
   scanButton.disabled = busy || !hasSelection;
   stopButton.disabled = !searchActive || state.stopping;
@@ -812,7 +826,7 @@ function updateControls() {
   inputClearButton.hidden = !input.value.trim();
   copyButton.disabled = !state.selectedMac;
   copyIpButton.disabled = !state.selectedIp;
-  exportButton.disabled = state.running || visibleTableRows().length === 0;
+  exportButton.disabled = state.running || visibleRows.length === 0;
   clearButton.disabled = state.tableMode !== "results";
   setText(
     "scanButtonText",
@@ -830,9 +844,11 @@ function updateControls() {
     "emptyRefreshButton",
     state.continuous
       ? "停止持续搜索"
-      : state.tableMode === "results"
-        ? "重新识别网段"
-        : "刷新设备总表"
+      : filteredEmpty
+        ? "清除筛选"
+        : state.tableMode === "results"
+          ? "重新识别网段"
+          : "刷新设备总表"
   );
 }
 
@@ -913,33 +929,266 @@ function stateClass(value) {
   return "";
 }
 
-function visibleTableRows() {
+function rawTableRows() {
   return state.tableMode === "results" ? state.results : state.devices;
 }
 
-function renderTable(items, mode, force) {
+function normalizeTableQuery(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function tableQueryActive() {
+  return !!normalizeTableQuery(state.tableQuery);
+}
+
+function tableRowSearchText(item) {
+  var row = item || {};
+  var stateValue = String(row.state || "");
+  var localLabel = stateValue.toLowerCase() === "local" ? "本机 local" : "";
+  return [
+    row.interface,
+    row.scan_range,
+    row.ip,
+    row.mac,
+    stateValue,
+    localLabel,
+    String(row.mac || "").replace(/[-:]/g, "")
+  ].join(" ").toLowerCase();
+}
+
+function filterTableRows(items, query) {
   var safeItems = Array.isArray(items) ? items : [];
-  var signature = mode + ":" + JSON.stringify(safeItems);
-  if (!force && signature === state.tableSignature) {
+  var tokens = normalizeTableQuery(query).split(/\s+/).filter(Boolean);
+  if (!tokens.length) {
+    return safeItems.slice();
+  }
+  return safeItems.filter(function (item) {
+    var text = tableRowSearchText(item);
+    return tokens.every(function (token) {
+      if (text.indexOf(token) >= 0) {
+        return true;
+      }
+      var compact = token.replace(/[-:]/g, "");
+      return compact !== token && text.indexOf(compact) >= 0;
+    });
+  });
+}
+
+function ipv4SortValue(value) {
+  var parts = String(value || "").split(".");
+  if (parts.length !== 4) {
+    return null;
+  }
+  var total = 0;
+  for (var index = 0; index < parts.length; index += 1) {
+    if (!/^\d{1,3}$/.test(parts[index])) {
+      return null;
+    }
+    var octet = Number(parts[index]);
+    if (octet > 255) {
+      return null;
+    }
+    total = total * 256 + octet;
+  }
+  return total;
+}
+
+function compareNaturalText(left, right) {
+  var leftText = String(left === undefined || left === null ? "" : left)
+    .toLowerCase();
+  var rightText = String(right === undefined || right === null ? "" : right)
+    .toLowerCase();
+  if (leftText === rightText) {
+    return 0;
+  }
+  var leftParts = leftText.match(/\d+|\D+/g) || [];
+  var rightParts = rightText.match(/\d+|\D+/g) || [];
+  var count = Math.max(leftParts.length, rightParts.length);
+  for (var index = 0; index < count; index += 1) {
+    var leftPart = leftParts[index] || "";
+    var rightPart = rightParts[index] || "";
+    if (leftPart === rightPart) {
+      continue;
+    }
+    if (/^\d+$/.test(leftPart) && /^\d+$/.test(rightPart)) {
+      var difference = Number(leftPart) - Number(rightPart);
+      if (difference !== 0) {
+        return difference < 0 ? -1 : 1;
+      }
+    }
+    return leftPart < rightPart ? -1 : 1;
+  }
+  return 0;
+}
+
+function compareScanRanges(left, right) {
+  var leftParts = String(left || "").split("/");
+  var rightParts = String(right || "").split("/");
+  var leftAddress = ipv4SortValue(leftParts[0]);
+  var rightAddress = ipv4SortValue(rightParts[0]);
+  if (leftAddress !== null && rightAddress !== null) {
+    if (leftAddress !== rightAddress) {
+      return leftAddress < rightAddress ? -1 : 1;
+    }
+    var leftPrefix = Number(leftParts[1]);
+    var rightPrefix = Number(rightParts[1]);
+    if (!Number.isNaN(leftPrefix) && !Number.isNaN(rightPrefix)) {
+      if (leftPrefix !== rightPrefix) {
+        return leftPrefix < rightPrefix ? -1 : 1;
+      }
+    }
+  } else if (leftAddress !== null) {
+    return -1;
+  } else if (rightAddress !== null) {
+    return 1;
+  }
+  return compareNaturalText(left, right);
+}
+
+function compareTableItems(left, right, key) {
+  var leftRow = left || {};
+  var rightRow = right || {};
+  if (key === "ip") {
+    var leftIp = ipv4SortValue(leftRow.ip);
+    var rightIp = ipv4SortValue(rightRow.ip);
+    if (leftIp !== null && rightIp !== null) {
+      if (leftIp !== rightIp) {
+        return leftIp < rightIp ? -1 : 1;
+      }
+    } else if (leftIp !== null) {
+      return -1;
+    } else if (rightIp !== null) {
+      return 1;
+    }
+    return compareNaturalText(leftRow.ip, rightRow.ip);
+  }
+  if (key === "scan_range") {
+    return compareScanRanges(leftRow.scan_range, rightRow.scan_range);
+  }
+  if (key === "mac") {
+    var leftMac = String(leftRow.mac || "").replace(/[-:]/g, "");
+    var rightMac = String(rightRow.mac || "").replace(/[-:]/g, "");
+    return compareNaturalText(leftMac, rightMac) ||
+      compareNaturalText(leftRow.interface, rightRow.interface);
+  }
+  return compareNaturalText(leftRow[key], rightRow[key]);
+}
+
+function sortTableRows(items, key, direction) {
+  var safeItems = Array.isArray(items) ? items.slice() : [];
+  if (!key || !Object.prototype.hasOwnProperty.call(TABLE_SORT_KEYS, key)) {
+    return safeItems;
+  }
+  var multiplier = direction === "descending" ? -1 : 1;
+  return safeItems.map(function (item, index) {
+    return { item: item, index: index };
+  }).sort(function (left, right) {
+    var compared = compareTableItems(left.item, right.item, key);
+    if (compared === 0) {
+      return left.index - right.index;
+    }
+    return compared * multiplier;
+  }).map(function (entry) {
+    return entry.item;
+  });
+}
+
+function visibleTableRows() {
+  return sortTableRows(
+    filterTableRows(rawTableRows(), state.tableQuery),
+    state.tableSortKey,
+    state.tableSortDirection
+  );
+}
+
+function updateTableFilterSummary(sourceCount, visibleCount) {
+  if (!sourceCount) {
+    setText("tableFilterSummary", "");
+  } else if (tableQueryActive()) {
+    setText(
+      "tableFilterSummary",
+      "筛选后 " + visibleCount + " / 共 " + sourceCount + " 台"
+    );
+  } else {
+    setText("tableFilterSummary", "共 " + sourceCount + " 台设备");
+  }
+}
+
+function updateTableFilterControls() {
+  var input = byId("tableFilter");
+  if (!input) {
     return;
   }
-  state.tableSignature = signature;
-  state.tableMode = mode;
-  if (mode === "results") {
-    state.results = safeItems;
-    if (state.continuous && (safeItems.length || !state.running)) {
-      persistCurrentFoundResults();
-    }
-  } else {
-    state.devices = safeItems;
+  if (input.value !== state.tableQuery) {
+    input.value = state.tableQuery;
   }
-  resetSelection();
+  var clearButton = byId("tableFilterClear");
+  if (clearButton) {
+    clearButton.hidden = !input.value;
+  }
+}
 
+function updateTableSortState() {
+  var headers = document.querySelectorAll
+    ? document.querySelectorAll(".results-table th[data-sort-key]")
+    : [];
+  for (var index = 0; index < headers.length; index += 1) {
+    var header = headers[index];
+    var active = header.getAttribute("data-sort-key") === state.tableSortKey;
+    header.setAttribute(
+      "aria-sort",
+      active ? state.tableSortDirection : "none"
+    );
+    var button = header.querySelector(".sort-button");
+    if (button && !button.getAttribute("aria-label")) {
+      button.setAttribute("aria-label", "按" + button.textContent.trim() + "排序");
+    }
+  }
+}
+
+function setTableSort(key) {
+  if (!Object.prototype.hasOwnProperty.call(TABLE_SORT_KEYS, key)) {
+    return;
+  }
+  if (state.tableSortKey === key) {
+    state.tableSortDirection = state.tableSortDirection === "ascending"
+      ? "descending"
+      : "ascending";
+  } else {
+    state.tableSortKey = key;
+    state.tableSortDirection = "ascending";
+  }
+  paintTableRows(true);
+}
+
+function setTableQuery(value) {
+  state.tableQuery = String(value || "");
+  var input = byId("tableFilter");
+  if (input && input.value !== state.tableQuery) {
+    input.value = state.tableQuery;
+  }
+  paintTableRows(true);
+}
+
+function clearTableFilter(focusInput) {
+  setTableQuery("");
+  if (focusInput) {
+    var input = byId("tableFilter");
+    if (input) {
+      input.focus();
+    }
+  }
+}
+
+function paintTableRows(preserveSelection) {
   var body = byId("resultsBody");
+  var sourceRows = rawTableRows();
+  var rows = visibleTableRows();
+  var selectedKey = preserveSelection ? state.selectedKey : "";
   while (body.firstChild) {
     body.removeChild(body.firstChild);
   }
-  safeItems.forEach(function (result) {
+  rows.forEach(function (result) {
     var row = document.createElement("tr");
     row.tabIndex = 0;
     row.setAttribute("role", "row");
@@ -990,15 +1239,60 @@ function renderTable(items, mode, force) {
     body.appendChild(row);
   });
 
-  setText("tableHeading", mode === "results" ? "匹配结果" : "设备总表");
-  setText("resultCount", safeItems.length);
-  setHidden("tableWrap", safeItems.length === 0);
-  setHidden("emptyState", safeItems.length > 0);
   setText(
-    "emptyRefreshButton",
-    mode === "results" ? "重新识别网段" : "刷新设备总表"
+    "tableHeading",
+    state.tableMode === "results" ? "匹配结果" : "设备总表"
   );
+  setText("resultCount", rows.length);
+  setHidden("tableToolbar", sourceRows.length === 0);
+  setHidden("tableWrap", rows.length === 0);
+  setHidden("emptyState", rows.length > 0);
+  updateTableFilterSummary(sourceRows.length, rows.length);
+  updateTableFilterControls();
+  updateTableSortState();
+
+  var restoredRow = null;
+  if (selectedKey) {
+    var rowNodes = body.querySelectorAll("tr");
+    for (var index = 0; index < rowNodes.length; index += 1) {
+      if (rowNodes[index].getAttribute("data-key") === selectedKey) {
+        restoredRow = rowNodes[index];
+        break;
+      }
+    }
+  }
+  if (restoredRow) {
+    selectRow(restoredRow);
+  } else {
+    resetSelection();
+  }
+  if (!rows.length) {
+    renderEmptyForStatus(state.running ? "running" : state.scanStatus);
+  }
   updateControls();
+}
+
+function renderTable(items, mode, force) {
+  var safeItems = Array.isArray(items) ? items : [];
+  var signature = mode + ":" + JSON.stringify(safeItems);
+  if (!force && signature === state.tableSignature) {
+    return;
+  }
+  var modeChanged = state.tableMode !== mode;
+  state.tableSignature = signature;
+  state.tableMode = mode;
+  if (modeChanged) {
+    state.tableQuery = "";
+  }
+  if (mode === "results") {
+    state.results = safeItems;
+    if (state.continuous && (safeItems.length || !state.running)) {
+      persistCurrentFoundResults();
+    }
+  } else {
+    state.devices = safeItems;
+  }
+  paintTableRows(false);
 }
 
 function renderResults(results, force) {
@@ -1010,6 +1304,15 @@ function renderDevices(devices, force) {
 }
 
 function renderEmptyForStatus(status) {
+  var sourceRows = rawTableRows();
+  if (tableQueryActive() && sourceRows.length) {
+    setText("emptyTitle", "没有符合筛选条件的设备");
+    setText(
+      "emptyMessage",
+      "请调整关键词，或清除筛选查看全部 " + sourceRows.length + " 台设备。"
+    );
+    return;
+  }
   if (state.tableMode === "devices") {
     setText("emptyTitle", "暂无设备记录");
     setText("emptyMessage", "当前网段中没有探测到设备，刷新后再试。");
@@ -2116,6 +2419,36 @@ function bindEvents() {
     updateControls();
   });
 
+  var tableFilter = byId("tableFilter");
+  if (tableFilter) {
+    tableFilter.addEventListener("input", function () {
+      setTableQuery(tableFilter.value);
+    });
+    tableFilter.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.stopPropagation();
+      if (tableQueryActive()) {
+        clearTableFilter(false);
+      } else {
+        tableFilter.blur();
+      }
+    });
+  }
+  var tableFilterClear = byId("tableFilterClear");
+  if (tableFilterClear) {
+    tableFilterClear.addEventListener("click", function () {
+      clearTableFilter(true);
+    });
+  }
+  var sortButtons = document.querySelectorAll(".sort-button");
+  sortButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      setTableSort(button.getAttribute("data-sort-key"));
+    });
+  });
+
   byId("scanForm").addEventListener("submit", function (event) {
     event.preventDefault();
     startScan();
@@ -2128,6 +2461,8 @@ function bindEvents() {
   byId("emptyRefreshButton").addEventListener("click", function () {
     if (state.continuous) {
       stopScan();
+    } else if (tableQueryActive() && rawTableRows().length) {
+      clearTableFilter(true);
     } else {
       refreshNetworks();
     }
@@ -2151,6 +2486,16 @@ function bindEvents() {
     }
     if (event.key === "Escape") {
       hideTooltip();
+      var currentFilter = byId("tableFilter");
+      if (currentFilter && document.activeElement === currentFilter) {
+        event.preventDefault();
+        if (tableQueryActive()) {
+          clearTableFilter(false);
+        } else {
+          currentFilter.blur();
+        }
+        return;
+      }
       if (state.running || state.continuous) {
         event.preventDefault();
         stopScan();

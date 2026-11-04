@@ -2,96 +2,96 @@
 name = "局域网 MAC 查询"
 auth = "qishiyi"
 descript = "发现当前局域网设备，读取网卡、IP、MAC 状态，并按 MAC 后四位快速定位设备。"
-release_note = "1.0.008：新增当前设备总表或匹配结果的 CSV 导出，带 UTF-8 BOM，可用 Excel 直接打开；支持 Ctrl+E，并对逗号、引号、换行和表格公式注入做了安全处理。"
+release_note = "1.0.010：设备总表和匹配结果支持按 IP、MAC、网卡、网段或状态即时筛选，并可按表头排序；CSV 导出会保留当前筛选和排序结果。"
 important = "扫描只读取本机路由和邻居表，不会更改 NAS 或其他设备的网络配置。"
 
 [zh-hk]
 name = "區域網絡 MAC 搜尋"
 auth = "qishiyi"
 descript = "搜尋目前區域網絡裝置，讀取網卡、IP、MAC 狀態，並按 MAC 尾四位定位裝置。"
-release_note = "1.0.008：新增目前裝置總表或配對結果的 CSV 匯出，帶 UTF-8 BOM，可直接用 Excel 開啟；支援 Ctrl+E，並安全處理逗號、引號、換行和試算表公式注入。"
+release_note = "1.0.010：裝置總表和配對結果支援按 IP、MAC、網卡、網段或狀態即時篩選，並可按表頭排序；CSV 匯出會保留目前篩選和排序結果。"
 important = "掃描只讀取本機路由和鄰居表，不會更改 NAS 或其他裝置的網絡設定。"
 
 [en-us]
 name = "LAN MAC Finder"
 auth = "qishiyi"
 descript = "Find devices on the current LAN and match the last four MAC characters with live interface and neighbor data."
-release_note = "1.0.008: exports the current device or match table as UTF-8 CSV for Excel, with Ctrl+E and safe handling for delimiters, line breaks, and spreadsheet formulas."
+release_note = "1.0.010: filters the device overview and match table by IP, MAC, interface, network, or state, adds sortable columns, and exports the visible filtered and sorted rows to CSV."
 important = "The app only reads local routing and neighbor data. It never changes NAS or device network settings."
 
 [fr-fr]
 name = "Recherche MAC LAN"
 auth = "qishiyi"
 descript = "Trouvez les appareils du reseau local et filtrez-les par les quatre derniers caracteres de leur adresse MAC."
-release_note = "1.0.008 : exporte le tableau courant en CSV UTF-8 pour Excel, avec Ctrl+E et une protection contre les separateurs, retours a la ligne et formules."
+release_note = "1.0.010 : filtre le tableau des appareils et des résultats par IP, MAC, interface, réseau ou état, ajoute le tri des colonnes et exporte les lignes visibles en CSV."
 important = "L'application lit uniquement le routage local et la table voisine, sans modifier la configuration reseau."
 
 [de-de]
 name = "LAN-MAC-Suche"
 auth = "qishiyi"
 descript = "Findet Geraete im aktuellen LAN und filtert sie anhand der letzten vier MAC-Zeichen."
-release_note = "1.0.008: exportiert die aktuelle Gerate- oder Trefferliste als UTF-8-CSV fur Excel, mit Ctrl+E und sicherem Umgang mit Trennzeichen, Zeilenumbruchen und Formeln."
+release_note = "1.0.010: filtert Geräteübersicht und Trefferliste nach IP, MAC, Schnittstelle, Netzwerk oder Status, ergänzt sortierbare Spalten und exportiert die sichtbaren Zeilen als CSV."
 important = "Die App liest nur lokale Routing- und Nachbardaten und aendert keine Netzwerkeinstellungen."
 
 [it-it]
 name = "Ricerca MAC LAN"
 auth = "qishiyi"
 descript = "Trova i dispositivi nella LAN corrente e filtra per gli ultimi quattro caratteri dell'indirizzo MAC."
-release_note = "1.0.008: esporta la tabella corrente in CSV UTF-8 per Excel, con Ctrl+E e protezione per separatori, righe e formule."
+release_note = "1.0.010: filtra l'elenco dispositivi e i risultati per IP, MAC, interfaccia, rete o stato, aggiunge l'ordinamento delle colonne ed esporta in CSV le righe visibili."
 important = "L'app legge solo routing e tabella dei vicini e non modifica la configurazione di rete."
 
 [es-es]
 name = "Buscador MAC LAN"
 auth = "qishiyi"
 descript = "Encuentra dispositivos en la LAN actual y filtra por los ultimos cuatro caracteres de su direccion MAC."
-release_note = "1.0.008: exporta la tabla actual a CSV UTF-8 para Excel, con Ctrl+E y proteccion de separadores, saltos de linea y formulas."
+release_note = "1.0.010: filtra el resumen de dispositivos y la tabla de resultados por IP, MAC, interfaz, red o estado, añade ordenación por columnas y exporta a CSV las filas visibles."
 important = "La aplicacion solo lee el enrutamiento y la tabla de vecinos sin cambiar la configuracion de red."
 
 [hu-hu]
 name = "LAN MAC kereső"
 auth = "qishiyi"
 descript = "Megkeresi az aktuális LAN eszközeit, és a MAC-cím utolsó négy karaktere alapján szűri őket."
-release_note = "1.0.008: CSV export a jelenlegi eszkoz- vagy talalati tablarol Excelhez, Ctrl+E gyorsbillentyuvel es biztonsagos cellakezelessel."
+release_note = "1.0.010: IP, MAC, hálózati adapter, hálózat vagy állapot szerint szűri az eszköz- és találati táblát, oszlop szerinti rendezést ad, és a látható sorokat CSV-be exportálja."
 important = "Az alkalmazás csak helyi útvonal- és szomszédadatokat olvas, hálózati beállítást nem módosít."
 
 [ja-jp]
 name = "LAN MAC 検索"
 auth = "qishiyi"
 descript = "現在の LAN 上のデバイスを検出し、MAC アドレスの末尾 4 文字で絞り込みます。"
-release_note = "1.0.008：現在の機器一覧または一致結果を Excel 向け UTF-8 CSV に書き出せます。Ctrl+E と安全なセル処理に対応しました。"
+release_note = "1.0.010：デバイス一覧と一致結果を IP、MAC、インターフェース、ネットワーク、状態で即時絞り込みでき、列の並べ替えと表示中の行の CSV 書き出しに対応しました。"
 important = "ローカルのルーティング情報と近隣テーブルのみを読み取り、ネットワーク設定は変更しません。"
 
 [ko-kr]
 name = "LAN MAC 찾기"
 auth = "qishiyi"
 descript = "현재 LAN의 장치를 찾고 MAC 주소 마지막 네 문자로 빠르게 구분합니다."
-release_note = "1.0.008: 현재 장치 또는 일치 결과 표를 Excel용 UTF-8 CSV로 내보낼 수 있으며 Ctrl+E와 안전한 셀 처리를 지원합니다."
+release_note = "1.0.010: 장치 개요와 일치 결과를 IP, MAC, 인터페이스, 네트워크 또는 상태로 즉시 필터링하고, 열 정렬과 현재 표시된 행의 CSV 내보내기를 지원합니다."
 important = "앱은 로컬 라우팅과 이웃 테이블만 읽으며 네트워크 설정을 변경하지 않습니다."
 
 [pl-pl]
 name = "Wyszukiwarka MAC LAN"
 auth = "qishiyi"
 descript = "Znajduje urzadzenia w biezacej sieci LAN i filtruje je po czterech ostatnich znakach adresu MAC."
-release_note = "1.0.008: eksport biezacej tabeli urzadzen lub wynikow do UTF-8 CSV dla Excela, ze skrotem Ctrl+E i bezpiecznym kodowaniem komorek."
+release_note = "1.0.010: filtruje listę urządzeń i wyniki według IP, MAC, interfejsu, sieci lub stanu, dodaje sortowanie kolumn i eksportuje widoczne wiersze do CSV."
 important = "Aplikacja tylko odczytuje lokalne trasy i tabele sasiadow, bez zmiany konfiguracji sieci."
 
 [ru-ru]
 name = "Поиск MAC в LAN"
 auth = "qishiyi"
 descript = "Находит устройства в текущей локальной сети и фильтрует их по последним четырём символам MAC."
-release_note = "1.0.008: экспорт текущей таблицы устройств или совпадений в UTF-8 CSV для Excel, с Ctrl+E и безопасной обработкой ячеек."
+release_note = "1.0.010: фильтрация списка устройств и результатов по IP, MAC, интерфейсу, сети или состоянию, сортировка по столбцам и экспорт видимых строк в CSV."
 important = "Приложение только читает локальную маршрутизацию и таблицу соседей, не меняя настройки сети."
 
 [tr-tr]
 name = "LAN MAC Bulucu"
 auth = "qishiyi"
 descript = "Geçerli LAN cihazlarını bulur ve MAC adresinin son dört karakterine göre filtreler."
-release_note = "1.0.008: gecerli cihaz veya eslesme tablosunu Excel icin UTF-8 CSV olarak disa aktarir; Ctrl+E ve guvenli hucre isleme sunar."
+release_note = "1.0.010: cihaz listesini ve eşleşme sonuçlarını IP, MAC, arayüz, ağ veya duruma göre filtreler, sütun sıralama ekler ve görünen satırları CSV olarak dışa aktarır."
 important = "Uygulama yalnızca yerel yönlendirme ve komşu verilerini okur, ağ ayarlarını değiştirmez."
 
 [pt-pt]
 name = "Localizador MAC LAN"
 auth = "qishiyi"
 descript = "Encontra dispositivos na LAN atual e filtra pelos quatro ultimos caracteres do endereco MAC."
-release_note = "1.0.008: exporta a tabela atual de dispositivos ou resultados para CSV UTF-8 para Excel, com Ctrl+E e tratamento seguro de celulas."
+release_note = "1.0.010: filtra a lista de dispositivos e os resultados por IP, MAC, interface, rede ou estado, adiciona ordenação por coluna e exporta as linhas visíveis para CSV."
 important = "A aplicacao apenas le o encaminhamento local e a tabela de vizinhos sem alterar a configuracao de rede."
