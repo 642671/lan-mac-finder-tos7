@@ -63,6 +63,17 @@ class PackageContractTests(unittest.TestCase):
         parser.read_string(raw.decode("utf-8"))
         self.assertEqual(set(parser.sections()), wanted)
 
+    def test_language_release_notes_match_version(self) -> None:
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.optionxform = str
+        parser.read_string((ROOT / "lan-mac-finder.lang").read_text(encoding="utf-8"))
+        for section in parser.sections():
+            self.assertTrue(
+                parser[section]["release_note"].strip().strip('"').startswith(version),
+                section,
+            )
+
     def test_lifecycle_safety_contract(self) -> None:
         for name in ("postinst", "prerm", "postrm"):
             path = ROOT / "DEBIAN" / name

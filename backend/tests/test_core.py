@@ -232,6 +232,57 @@ class NeighborTests(unittest.TestCase):
         self.assertEqual(devices[1]["state"], "LOCAL")
         self.assertEqual(devices[1]["ip"], "192.0.2.25")
 
+    def test_collect_deduplicates_shared_network_and_prefers_best_state(self) -> None:
+        targets = []
+        states = {
+            "ovs_eth0": "STALE",
+            "ovs_eth1": "REACHABLE",
+            "ovs_eth2": "DELAY",
+        }
+        for interface, local_ip in (
+            ("ovs_eth0", "192.0.2.25"),
+            ("ovs_eth1", "192.0.2.26"),
+            ("ovs_eth2", "192.0.2.27"),
+        ):
+            network = parse_ipv4_network(local_ip, 24)
+            targets.append(
+                NetworkTarget(
+                    interface=interface,
+                    alias=interface,
+                    local_ip=local_ip,
+                    prefix_length=network.prefixlen,
+                    gateway="192.0.2.1",
+                    network=str(network.network_address),
+                    broadcast=str(network.broadcast_address),
+                    scan_range=str(network),
+                    host_count=len(network_hosts(network)),
+                    local_source=local_ip,
+                    local_mac="02-42-AC-11-00-19",
+                )
+            )
+
+        def neighbors(interface):
+            return [
+                NeighborRecord(
+                    interface,
+                    "192.0.2.10",
+                    "02-42-AC-11-45-6A",
+                    states[interface],
+                )
+            ]
+
+        devices, warnings = collect_neighbor_devices(targets, neighbors=neighbors)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(devices), 4)
+        shared = next(device for device in devices if device["ip"] == "192.0.2.10")
+        self.assertEqual(shared["interface"], "ovs_eth1")
+        self.assertEqual(shared["state"], "REACHABLE")
+        self.assertEqual(
+            {device["ip"] for device in devices if device["state"] == "LOCAL"},
+            {"192.0.2.25", "192.0.2.26", "192.0.2.27"},
+        )
+
     def test_match_local_interface_mac(self) -> None:
         target = NetworkTarget(
             interface="eth0",
@@ -316,6 +367,7 @@ class ScanManagerTests(unittest.TestCase):
         self,
         interface: str = "enp1s0",
         local_ip: str = "192.0.2.25",
+        local_mac: str = "02-42-AC-11-00-19",
     ) -> NetworkTarget:
         network = parse_ipv4_network(local_ip, 24)
         return NetworkTarget(
@@ -329,7 +381,7 @@ class ScanManagerTests(unittest.TestCase):
             scan_range=str(network),
             host_count=len(network_hosts(network)),
             local_source=local_ip,
-            local_mac="02-42-AC-11-00-19",
+            local_mac=local_mac,
         )
 
     def test_scan_manager_collects_matches(self) -> None:
@@ -382,6 +434,51 @@ class ScanManagerTests(unittest.TestCase):
         self.assertEqual(sweep_calls, ["192.0.2.0/24", "198.51.100.0/24"])
         self.assertEqual(status["total_hosts"], 508)
         self.assertEqual(len(status["selected_network_ids"]), 2)
+
+    def test_scan_manager_sweeps_shared_network_once(self) -> None:
+        targets = [
+            self._target("ovs_eth0", "192.0.2.25", "02-42-AC-11-45-6A"),
+            self._target("ovs_eth1", "192.0.2.26", "02-42-AC-11-45-6A"),
+            self._target("ovs_eth2", "192.0.2.27", "02-42-AC-11-45-6A"),
+        ]
+        sweep_calls = []
+
+        def sweep(target, cancel_event, progress):
+            sweep_calls.append(target.interface)
+            progress(target.host_count)
+            return True
+
+        def neighbors(interface):
+            state = "REACHABLE" if interface == "ovs_eth1" else "STALE"
+            return [
+                NeighborRecord(
+                    interface,
+                    "192.0.2.10",
+                    "02-42-AC-11-45-6A",
+                    state,
+                )
+            ]
+
+        manager = ScanManager(
+            discover=lambda: (targets, []),
+            neighbors=neighbors,
+            sweep=sweep,
+        )
+        self.assertTrue(manager.start("456A"))
+        manager.wait(2)
+        status = manager.status()
+
+        self.assertEqual(status["status"], "completed")
+        self.assertEqual(sweep_calls, ["ovs_eth0"])
+        self.assertEqual(status["total_hosts"], 254)
+        self.assertEqual(status["probed_hosts"], 254)
+        self.assertEqual(len(status["results"]), 4)
+        shared = next(result for result in status["results"] if result["ip"] == "192.0.2.10")
+        self.assertEqual(shared["state"], "REACHABLE")
+        self.assertEqual(
+            {result["ip"] for result in status["results"] if result["state"] == "LOCAL"},
+            {"192.0.2.25", "192.0.2.26", "192.0.2.27"},
+        )
 
     def test_scan_manager_only_scans_selected_network(self) -> None:
         first = self._target("enp1s0", "192.0.2.25")
@@ -536,6 +633,70 @@ class ScanManagerTests(unittest.TestCase):
         self.assertEqual(len(status["results"]), 1)
         self.assertEqual(status["results"][0]["state"], "LOCAL")
         self.assertEqual(status["results"][0]["mac"], "02-42-AC-11-45-6A")
+
+    def test_result_merge_keeps_identical_device_in_different_ranges(self) -> None:
+        manager = ScanManager()
+        manager._append_results(
+            [
+                {
+                    "interface": "enp1s0",
+                    "scan_range": "192.0.2.0/24",
+                    "ip": "192.0.2.10",
+                    "mac": "02-42-AC-11-45-6A",
+                    "state": "REACHABLE",
+                },
+                {
+                    "interface": "enp2s0",
+                    "scan_range": "198.51.100.0/24",
+                    "ip": "192.0.2.10",
+                    "mac": "02-42-AC-11-45-6A",
+                    "state": "REACHABLE",
+                },
+            ]
+        )
+
+        results = manager.status()["results"]
+        self.assertEqual(len(results), 2)
+        self.assertEqual(
+            {result["scan_range"] for result in results},
+            {"192.0.2.0/24", "198.51.100.0/24"},
+        )
+
+    def test_probe_network_devices_sweeps_shared_network_once(self) -> None:
+        targets = [
+            self._target("ovs_eth0", "192.0.2.25"),
+            self._target("ovs_eth1", "192.0.2.26"),
+            self._target("ovs_eth2", "192.0.2.27"),
+        ]
+        sweep_calls = []
+
+        def sweep(target, cancel_event):
+            sweep_calls.append(target.interface)
+            return True
+
+        def neighbors(interface):
+            return [
+                NeighborRecord(
+                    interface,
+                    "192.0.2.10",
+                    "02-42-AC-11-45-6A",
+                    "REACHABLE",
+                )
+            ]
+
+        devices, warnings = probe_network_devices(
+            targets,
+            sweep=sweep,
+            neighbors=neighbors,
+        )
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(sweep_calls, ["ovs_eth0"])
+        self.assertEqual(len(devices), 4)
+        self.assertEqual(
+            {device["ip"] for device in devices if device["state"] == "LOCAL"},
+            {"192.0.2.25", "192.0.2.26", "192.0.2.27"},
+        )
 
     def test_probe_network_devices_returns_all_neighbors(self) -> None:
         target = self._target()

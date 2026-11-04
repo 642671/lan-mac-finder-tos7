@@ -24,6 +24,13 @@ DEFAULT_CONCURRENCY = 64
 MAX_NETWORK_SELECTION = 64
 MAX_NETWORK_ID_LENGTH = 256
 ALLOWED_NEIGHBOR_STATES = {"REACHABLE", "STALE", "DELAY", "PROBE"}
+DEVICE_STATE_PRIORITY = {
+    "STALE": 1,
+    "PROBE": 2,
+    "DELAY": 3,
+    "REACHABLE": 4,
+    "LOCAL": 5,
+}
 MAC_SUFFIX_PATTERN = re.compile(
     r"^(?:[0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})$"
 )
@@ -563,6 +570,36 @@ def _sort_results(results: Iterable[dict]) -> list[dict]:
     return sorted(results, key=key)
 
 
+def _merge_device(unique: dict[tuple[str, str, str], dict], item: dict) -> None:
+    key = (
+        str(item.get("scan_range", "")),
+        str(item.get("ip", "")),
+        str(item.get("mac", "")),
+    )
+    existing = unique.get(key)
+    if existing is None:
+        unique[key] = dict(item)
+        return
+    item_priority = DEVICE_STATE_PRIORITY.get(str(item.get("state", "")), 0)
+    existing_priority = DEVICE_STATE_PRIORITY.get(str(existing.get("state", "")), 0)
+    if item_priority > existing_priority:
+        unique[key] = dict(item)
+
+
+def _merge_devices(results: Iterable[dict]) -> dict[tuple[str, str, str], dict]:
+    unique: dict[tuple[str, str, str], dict] = {}
+    for item in results:
+        _merge_device(unique, item)
+    return unique
+
+
+def _sweep_groups(targets: Iterable[NetworkTarget]) -> list[list[NetworkTarget]]:
+    grouped: dict[str, list[NetworkTarget]] = {}
+    for target in targets:
+        grouped.setdefault(target.scan_range, []).append(target)
+    return list(grouped.values())
+
+
 def collect_neighbor_devices(
     targets: Iterable[NetworkTarget],
     neighbors: Callable[[str], list[NeighborRecord]] = read_neighbors,
@@ -571,24 +608,21 @@ def collect_neighbor_devices(
 
     warnings: list[str] = []
     records_by_interface: dict[str, list[NeighborRecord]] = {}
-    devices: list[dict] = []
-    seen: set[tuple[str, str, str]] = set()
+    devices: dict[tuple[str, str, str], dict] = {}
 
     for target in targets:
         local_mac = normalize_mac(target.local_mac)
         if local_mac:
-            local_key = (target.interface, target.local_ip, local_mac)
-            if local_key not in seen:
-                seen.add(local_key)
-                devices.append(
-                    {
-                        "interface": target.interface,
-                        "scan_range": target.scan_range,
-                        "ip": target.local_ip,
-                        "mac": local_mac,
-                        "state": "LOCAL",
-                    }
-                )
+            _merge_device(
+                devices,
+                {
+                    "interface": target.interface,
+                    "scan_range": target.scan_range,
+                    "ip": target.local_ip,
+                    "mac": local_mac,
+                    "state": "LOCAL",
+                },
+            )
         interface = target.interface
         if interface not in records_by_interface:
             try:
@@ -605,21 +639,18 @@ def collect_neighbor_devices(
                 continue
             if not isinstance(address, ipaddress.IPv4Address) or address not in network:
                 continue
-            key = (record.interface, record.ip, record.mac)
-            if key in seen:
-                continue
-            seen.add(key)
-            devices.append(
+            _merge_device(
+                devices,
                 {
                     "interface": record.interface,
                     "scan_range": target.scan_range,
                     "ip": record.ip,
                     "mac": record.mac,
                     "state": record.state,
-                }
+                },
             )
 
-    return _sort_results(devices), warnings
+    return _sort_results(devices.values()), warnings
 
 
 def probe_network_devices(
@@ -633,7 +664,8 @@ def probe_network_devices(
     target_list = list(targets)
     warnings: list[str] = []
     cancel_event = threading.Event()
-    for target in target_list:
+    for group in _sweep_groups(target_list):
+        target = group[0]
         try:
             sweep(target, cancel_event)
         except (CommandError, OSError) as exc:
@@ -792,9 +824,7 @@ class ScanManager:
     def _append_results(self, values: Iterable[dict]) -> None:
         with self._lock:
             combined = list(self._state["results"]) + list(values)
-            unique: dict[tuple[str, str, str], dict] = {}
-            for item in combined:
-                unique[(item["interface"], item["ip"], item["mac"])] = item
+            unique = _merge_devices(combined)
             self._state["results"] = _sort_results(unique.values())
 
     def _run(
@@ -826,7 +856,8 @@ class ScanManager:
                 )
                 return
 
-            total = sum(target.host_count for target in targets)
+            sweep_groups = _sweep_groups(targets)
+            total = sum(group[0].host_count for group in sweep_groups)
             self._update(
                 status="scanning",
                 networks=[network_target_payload(target) for target in targets],
@@ -837,9 +868,10 @@ class ScanManager:
                 total_hosts=total,
             )
             probed_before = 0
-            for target in targets:
+            for group in sweep_groups:
                 if cancel_event.is_set():
                     raise ScanCancelled("scan stopped")
+                target = group[0]
                 self._update(
                     current_interface=target.interface,
                     current_range=target.scan_range,
@@ -858,11 +890,12 @@ class ScanManager:
                     cancel_event,
                     on_progress,
                 )
-                self._append_results(match_local_target(target, suffix))
-                records = self._neighbors(target.interface)
-                self._append_results(
-                    match_neighbor_records(records, suffix, target.scan_range)
-                )
+                for member in group:
+                    self._append_results(match_local_target(member, suffix))
+                    records = self._neighbors(member.interface)
+                    self._append_results(
+                        match_neighbor_records(records, suffix, member.scan_range)
+                    )
                 probed_before += target.host_count
 
             if cancel_event.is_set():
