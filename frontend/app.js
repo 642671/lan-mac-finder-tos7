@@ -14,6 +14,7 @@ var MIN_WORKSPACE_WIDTH = 560;
 var MIN_SCAN_PANE_HEIGHT = 280;
 var MIN_NETWORK_PANE_HEIGHT = 200;
 var CONTINUOUS_RESTART_DELAY_MS = 1100;
+var MAX_NO_MATCH_ROUNDS = 10;
 var SERVICE_RETRY_DELAY_MS = 2200;
 var REQUEST_TIMEOUT_MS = 12000;
 var INVENTORY_REQUEST_TIMEOUT_MS = 45000;
@@ -70,6 +71,9 @@ var state = {
   normalizedSuffix: "",
   scanStatus: "idle",
   continuous: false,
+  noMatchRounds: 0,
+  lastCountedJobId: "",
+  searchExhausted: false,
   inventoryScanning: false,
   searchGeneration: 0,
   retryDelay: SERVICE_RETRY_DELAY_MS,
@@ -286,6 +290,8 @@ function persistSearchIntent(displaySuffix, normalizedSuffix, results) {
     displaySuffix: displaySuffix,
     normalizedSuffix: normalizedSuffix,
     continuous: true,
+    noMatchRounds: state.noMatchRounds,
+    lastCountedJobId: state.lastCountedJobId,
     lastResults: Array.isArray(results) ? results.slice(0, 50) : []
   });
 }
@@ -318,7 +324,20 @@ function restoreSearchIntent() {
     return false;
   }
   byId("macSuffix").value = displaySuffix;
+  var storedRounds = Math.max(
+    0,
+    Math.floor(Number(intent.noMatchRounds) || 0)
+  );
+  if (storedRounds >= MAX_NO_MATCH_ROUNDS) {
+    removeStoredValue(SEARCH_INTENT_KEY);
+    return false;
+  }
   state.continuous = true;
+  state.searchExhausted = false;
+  state.noMatchRounds = storedRounds;
+  state.lastCountedJobId = typeof intent.lastCountedJobId === "string"
+    ? intent.lastCountedJobId
+    : "";
   state.activeSuffix = displaySuffix;
   state.normalizedSuffix = normalizedSuffix;
   state.scanStatus = "waiting";
@@ -340,6 +359,71 @@ function restoreSearchIntent() {
     "服务恢复后将自动继续查找 MAC 后缀 " + displaySuffix + "。"
   );
   return true;
+}
+
+function deviceWebUrl(ip) {
+  var text = String(ip || "").trim();
+  var parts = text.split(".");
+  if (parts.length !== 4) {
+    return "";
+  }
+  for (var index = 0; index < parts.length; index += 1) {
+    if (!/^\d{1,3}$/.test(parts[index]) || Number(parts[index]) > 255) {
+      return "";
+    }
+  }
+  return "http://" + text + "/";
+}
+
+function continuousRoundLabel() {
+  var current = Math.min(MAX_NO_MATCH_ROUNDS, state.noMatchRounds + 1);
+  return "第 " + current + " / " + MAX_NO_MATCH_ROUNDS + " 轮";
+}
+
+function continuousExhaustedMessage() {
+  return "已完成 " + MAX_NO_MATCH_ROUNDS + " 轮轮询查找，最终没有找到 MAC 后缀 " +
+    state.activeSuffix + " 的设备。";
+}
+
+function registerContinuousRound(jobId, resultCount) {
+  var key = String(jobId || "");
+  if (!state.continuous || !key || key === state.lastCountedJobId) {
+    return {
+      changed: false,
+      rounds: state.noMatchRounds,
+      exhausted: false,
+      found: false
+    };
+  }
+  state.lastCountedJobId = key;
+  if (Number(resultCount) > 0) {
+    state.noMatchRounds = 0;
+    return {
+      changed: true,
+      rounds: 0,
+      exhausted: false,
+      found: true
+    };
+  }
+  state.noMatchRounds += 1;
+  return {
+    changed: true,
+    rounds: state.noMatchRounds,
+    exhausted: state.noMatchRounds >= MAX_NO_MATCH_ROUNDS,
+    found: false
+  };
+}
+
+function resetContinuousRoundTracking() {
+  state.noMatchRounds = 0;
+  state.lastCountedJobId = "";
+  state.searchExhausted = false;
+}
+
+function isIpLinkTarget(target) {
+  return !!target &&
+    typeof target.closest === "function" &&
+    target.closest(".ip-link") !== null;
 }
 
 function getCookie(name) {
@@ -1207,7 +1291,19 @@ function paintTableRows(preserveSelection) {
     rangeCell.textContent = result.scan_range;
     var ipCell = document.createElement("td");
     ipCell.className = "mono-value";
-    ipCell.textContent = result.ip;
+    var ipUrl = deviceWebUrl(result.ip);
+    if (ipUrl) {
+      var ipLink = document.createElement("a");
+      ipLink.className = "ip-link";
+      ipLink.href = ipUrl;
+      ipLink.target = "_blank";
+      ipLink.rel = "noopener noreferrer";
+      ipLink.textContent = result.ip;
+      ipLink.title = "在新标签页打开 " + ipUrl;
+      ipCell.appendChild(ipLink);
+    } else {
+      ipCell.textContent = result.ip;
+    }
     var macCell = document.createElement("td");
     macCell.className = "mono-value";
     macCell.textContent = result.mac;
@@ -1222,19 +1318,26 @@ function paintTableRows(preserveSelection) {
     row.appendChild(ipCell);
     row.appendChild(macCell);
     row.appendChild(stateCell);
-    row.addEventListener("click", function () {
+    row.addEventListener("click", function (event) {
+      if (isIpLinkTarget(event.target)) {
+        return;
+      }
       selectRow(row);
     });
-    row.addEventListener("dblclick", function () {
+    row.addEventListener("dblclick", function (event) {
+      if (isIpLinkTarget(event.target)) {
+        return;
+      }
       selectRow(row);
       copySelectedMac();
     });
     row.addEventListener("keydown", function (event) {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        selectRow(row);
-        copySelectedMac();
+      if (event.key !== "Enter" || isIpLinkTarget(event.target)) {
+        return;
       }
+      event.preventDefault();
+      selectRow(row);
+      copySelectedMac();
     });
     body.appendChild(row);
   });
@@ -1316,6 +1419,11 @@ function renderEmptyForStatus(status) {
   if (state.tableMode === "devices") {
     setText("emptyTitle", "暂无设备记录");
     setText("emptyMessage", "当前网段中没有探测到设备，刷新后再试。");
+    return;
+  }
+  if (state.searchExhausted) {
+    setText("emptyTitle", "轮询查找未找到");
+    setText("emptyMessage", continuousExhaustedMessage());
     return;
   }
   if (state.continuous) {
@@ -1406,6 +1514,22 @@ function renderScanStatus(data, notifyTerminal) {
     incomingResults,
     state.results
   );
+  var roundOutcome = null;
+  if (state.continuous && !state.running && state.scanStatus === "completed") {
+    roundOutcome = registerContinuousRound(data.job_id, incomingResults.length);
+    if (roundOutcome.changed && state.continuous) {
+      persistSearchIntent(
+        state.activeSuffix,
+        state.normalizedSuffix,
+        incomingResults
+      );
+    }
+    if (roundOutcome.exhausted) {
+      state.continuous = false;
+      state.searchExhausted = true;
+      discardSearchIntent();
+    }
+  }
   if (data.job_id || state.tableMode === "results") {
     if (!preserveFoundResults) {
       renderResults(incomingResults, false);
@@ -1429,8 +1553,10 @@ function renderScanStatus(data, notifyTerminal) {
       setProgress(percent, false, "正在探测主机并读取邻居表");
       setText(
         "resultSummary",
-        (state.continuous ? "正在持续匹配后缀 " : "正在匹配后缀 ") +
-          state.activeSuffix +
+        (state.continuous
+          ? "正在持续匹配后缀 " + state.activeSuffix +
+            "（" + continuousRoundLabel() + "）"
+          : "正在匹配后缀 " + state.activeSuffix) +
           "，已探测 " + state.probedHosts + " / " + state.totalHosts + " 台主机。"
       );
       setScanState(
@@ -1444,7 +1570,14 @@ function renderScanStatus(data, notifyTerminal) {
   } else if (state.scanStatus === "completed") {
     setProgress(100, false, "扫描完成");
     setHidden("scanProgress", true);
-    if (state.continuous && state.results.length) {
+    if (state.searchExhausted) {
+      setScanState(
+        "idle",
+        "轮询查找结束",
+        continuousExhaustedMessage()
+      );
+      setText("resultSummary", continuousExhaustedMessage());
+    } else if (state.continuous && state.results.length) {
       setScanState(
         "success",
         "已找到匹配设备",
@@ -1460,11 +1593,13 @@ function renderScanStatus(data, notifyTerminal) {
       setScanState(
         "success",
         "当前没有搜索到",
-        "本轮未发现后缀 " + state.activeSuffix + "，将自动开始下一轮搜索。"
+        "第 " + state.noMatchRounds + " / " + MAX_NO_MATCH_ROUNDS +
+          " 轮未发现后缀 " + state.activeSuffix + "，将自动开始下一轮搜索。"
       );
       setText(
         "resultSummary",
-        "当前没有搜索到后缀 " + state.activeSuffix + "，持续搜索仍在进行。"
+        "当前没有搜索到后缀 " + state.activeSuffix +
+          "，持续搜索仍在进行（" + continuousRoundLabel() + "）。"
       );
     } else if (state.results.length) {
       setScanState(
@@ -1575,9 +1710,11 @@ function renderScanStatus(data, notifyTerminal) {
   if (notifyTerminal && !state.continuous && wasRunning && !state.running && state.jobId) {
     if (state.scanStatus === "completed") {
       toast(
-        state.results.length
-          ? "扫描完成，找到 " + state.results.length + " 条匹配记录。"
-          : "扫描完成，未找到匹配设备。",
+        state.searchExhausted
+          ? continuousExhaustedMessage()
+          : state.results.length
+            ? "扫描完成，找到 " + state.results.length + " 条匹配记录。"
+            : "扫描完成，未找到匹配设备。",
         false
       );
     } else if (state.scanStatus === "stopped") {
@@ -1864,6 +2001,7 @@ async function startScan(options) {
   if (!startOptions.continuousCycle) {
     state.searchGeneration += 1;
     resetServiceRetryDelay();
+    resetContinuousRoundTracking();
   }
   var generation = state.searchGeneration;
   var displaySuffix = byId("macSuffix").value.trim();
@@ -2091,6 +2229,7 @@ async function clearResults() {
   var wasRunning = state.running;
   state.searchGeneration += 1;
   state.continuous = false;
+  resetContinuousRoundTracking();
   discardSearchIntent();
   state.running = false;
   state.stopping = false;

@@ -1447,6 +1447,21 @@ html[data-theme="dark"] .table-toolbar {
   font-variant-numeric: tabular-nums;
 }
 
+.ip-link {
+  color: var(--accent);
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color 130ms ease;
+}
+
+.ip-link:hover {
+  color: var(--accent-strong);
+  text-decoration-style: solid;
+}
+
 .state-chip {
   display: inline-flex;
   align-items: center;

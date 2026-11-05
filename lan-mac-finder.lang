@@ -2,96 +2,96 @@
 name = "局域网 MAC 查询"
 auth = "qishiyi"
 descript = "发现当前局域网设备，读取网卡、IP、MAC 状态，并按 MAC 后四位快速定位设备。"
-release_note = "1.0.011：合并同一网段下多块 OVS 或物理网卡发现的重复设备，并对相同网段只扫描一次，减少耗时和重复结果。"
+release_note = "1.0.012：轮询查找最多执行 10 轮，仍未找到时会明确提示轮询结束且最终没有找到；设备 IP 现在可点击并在新标签页打开。"
 important = "扫描只读取本机路由和邻居表，不会更改 NAS 或其他设备的网络配置。"
 
 [zh-hk]
 name = "區域網絡 MAC 搜尋"
 auth = "qishiyi"
 descript = "搜尋目前區域網絡裝置，讀取網卡、IP、MAC 狀態，並按 MAC 尾四位定位裝置。"
-release_note = "1.0.011：合併同一網段下多塊 OVS 或實體網卡發現的重複裝置，並對相同網段只掃描一次，減少耗時和重複結果。"
+release_note = "1.0.012：輪詢搜尋最多執行 10 輪，仍未找到時會明確提示輪詢結束且最終沒有找到；裝置 IP 現在可點擊並在新分頁開啟。"
 important = "掃描只讀取本機路由和鄰居表，不會更改 NAS 或其他裝置的網絡設定。"
 
 [en-us]
 name = "LAN MAC Finder"
 auth = "qishiyi"
 descript = "Find devices on the current LAN and match the last four MAC characters with live interface and neighbor data."
-release_note = "1.0.011: deduplicates devices found through multiple OVS or physical interfaces on the same network and sweeps each network only once, reducing scan time and duplicate rows."
+release_note = "1.0.012: polling stops after at most 10 rounds and clearly reports when the search ultimately finds nothing; device IPs are now clickable and open in a new tab."
 important = "The app only reads local routing and neighbor data. It never changes NAS or device network settings."
 
 [fr-fr]
 name = "Recherche MAC LAN"
 auth = "qishiyi"
 descript = "Trouvez les appareils du reseau local et filtrez-les par les quatre derniers caracteres de leur adresse MAC."
-release_note = "1.0.011 : déduplique les appareils détectés via plusieurs interfaces OVS ou physiques sur le même réseau et ne balaye chaque réseau qu'une seule fois, réduisant la durée et les doublons."
+release_note = "1.0.012 : la recherche s'arrête après 10 tours au maximum et indique clairement l'absence de résultat final ; les adresses IP sont désormais cliquables et s'ouvrent dans un nouvel onglet."
 important = "L'application lit uniquement le routage local et la table voisine, sans modifier la configuration reseau."
 
 [de-de]
 name = "LAN-MAC-Suche"
 auth = "qishiyi"
 descript = "Findet Geraete im aktuellen LAN und filtert sie anhand der letzten vier MAC-Zeichen."
-release_note = "1.0.011: entfernt doppelte Geräte, die über mehrere OVS- oder physische Schnittstellen im selben Netz erkannt wurden, und scannt jedes Netz nur einmal, wodurch Laufzeit und doppelte Zeilen sinken."
+release_note = "1.0.012: Die Suche endet nach höchstens 10 Runden und meldet klar, wenn nichts gefunden wurde; Geräte-IPs sind jetzt anklickbar und öffnen sich in einem neuen Tab."
 important = "Die App liest nur lokale Routing- und Nachbardaten und aendert keine Netzwerkeinstellungen."
 
 [it-it]
 name = "Ricerca MAC LAN"
 auth = "qishiyi"
 descript = "Trova i dispositivi nella LAN corrente e filtra per gli ultimi quattro caratteri dell'indirizzo MAC."
-release_note = "1.0.011: elimina i duplicati rilevati tramite più interfacce OVS o fisiche sulla stessa rete e analizza ogni rete una sola volta, riducendo tempi e righe duplicate."
+release_note = "1.0.012: la ricerca si ferma dopo massimo 10 cicli e segnala chiaramente quando non trova nulla; gli IP dei dispositivi sono ora cliccabili e si aprono in una nuova scheda."
 important = "L'app legge solo routing e tabella dei vicini e non modifica la configurazione di rete."
 
 [es-es]
 name = "Buscador MAC LAN"
 auth = "qishiyi"
 descript = "Encuentra dispositivos en la LAN actual y filtra por los ultimos cuatro caracteres de su direccion MAC."
-release_note = "1.0.011: elimina los dispositivos duplicados detectados por varias interfaces OVS o físicas en la misma red y analiza cada red una sola vez, reduciendo el tiempo y las filas repetidas."
+release_note = "1.0.012: la búsqueda se detiene tras un máximo de 10 rondas y avisa claramente cuando no encuentra nada; las IP ahora son clicables y se abren en una nueva pestaña."
 important = "La aplicacion solo lee el enrutamiento y la tabla de vecinos sin cambiar la configuracion de red."
 
 [hu-hu]
 name = "LAN MAC kereső"
 auth = "qishiyi"
 descript = "Megkeresi az aktuális LAN eszközeit, és a MAC-cím utolsó négy karaktere alapján szűri őket."
-release_note = "1.0.011: eltávolítja az ugyanazon hálózaton több OVS vagy fizikai interfészen keresztül talált duplikált eszközöket, és minden hálózatot csak egyszer szkennel, csökkentve az időt és az ismétlődő sorokat."
+release_note = "1.0.012: a keresés legfeljebb 10 kör után leáll, és egyértelműen jelzi, ha végül nem talál semmit; az eszközök IP-címei most kattinthatók, és új lapon nyílnak meg."
 important = "Az alkalmazás csak helyi útvonal- és szomszédadatokat olvas, hálózati beállítást nem módosít."
 
 [ja-jp]
 name = "LAN MAC 検索"
 auth = "qishiyi"
 descript = "現在の LAN 上のデバイスを検出し、MAC アドレスの末尾 4 文字で絞り込みます。"
-release_note = "1.0.011：同じネットワーク上の複数の OVS または物理インターフェースで見つかった重複デバイスを統合し、各ネットワークのスキャンを1回だけ実行して、時間と重複行を削減しました。"
+release_note = "1.0.012：ポーリング検索は最大 10 回で終了し、最終的に見つからない場合はその旨を明確に表示します。デバイスの IP はクリック可能になり、新しいタブで開きます。"
 important = "ローカルのルーティング情報と近隣テーブルのみを読み取り、ネットワーク設定は変更しません。"
 
 [ko-kr]
 name = "LAN MAC 찾기"
 auth = "qishiyi"
 descript = "현재 LAN의 장치를 찾고 MAC 주소 마지막 네 문자로 빠르게 구분합니다."
-release_note = "1.0.011: 동일 네트워크의 여러 OVS 또는 물리 인터페이스에서 발견된 중복 장치를 병합하고 각 네트워크를 한 번만 검색하여 시간과 중복 행을 줄입니다."
+release_note = "1.0.012: 폴링 검색은 최대 10회 후 종료되며, 최종적으로 찾지 못하면 명확히 안내합니다. 장치 IP를 클릭하면 새 탭에서 열립니다."
 important = "앱은 로컬 라우팅과 이웃 테이블만 읽으며 네트워크 설정을 변경하지 않습니다."
 
 [pl-pl]
 name = "Wyszukiwarka MAC LAN"
 auth = "qishiyi"
 descript = "Znajduje urzadzenia w biezacej sieci LAN i filtruje je po czterech ostatnich znakach adresu MAC."
-release_note = "1.0.011: usuwa duplikaty urządzeń wykrytych przez wiele interfejsów OVS lub fizycznych w tej samej sieci i skanuje każdą sieć tylko raz, skracając czas i ograniczając powtarzające się wiersze."
+release_note = "1.0.012: wyszukiwanie kończy się po maksymalnie 10 rundach i wyraźnie informuje, gdy nic nie znaleziono; adresy IP urządzeń są teraz klikalne i otwierają się w nowej karcie."
 important = "Aplikacja tylko odczytuje lokalne trasy i tabele sasiadow, bez zmiany konfiguracji sieci."
 
 [ru-ru]
 name = "Поиск MAC в LAN"
 auth = "qishiyi"
 descript = "Находит устройства в текущей локальной сети и фильтрует их по последним четырём символам MAC."
-release_note = "1.0.011: объединяет повторяющиеся устройства, найденные через несколько OVS- или физических интерфейсов одной сети, и сканирует каждую сеть только один раз, сокращая время и дублирующиеся строки."
+release_note = "1.0.012: поиск останавливается после максимум 10 циклов и явно сообщает, если в итоге ничего не найдено; IP-адреса устройств теперь можно нажать, чтобы открыть их в новой вкладке."
 important = "Приложение только читает локальную маршрутизацию и таблицу соседей, не меняя настройки сети."
 
 [tr-tr]
 name = "LAN MAC Bulucu"
 auth = "qishiyi"
 descript = "Geçerli LAN cihazlarını bulur ve MAC adresinin son dört karakterine göre filtreler."
-release_note = "1.0.011: aynı ağdaki birden fazla OVS veya fiziksel arayüzden bulunan yinelenen cihazları birleştirir ve her ağı yalnızca bir kez tarayarak süreyi ve yinelenen satırları azaltır."
+release_note = "1.0.012: arama en fazla 10 turdan sonra durur ve sonuçta hiçbir şey bulunamazsa bunu açıkça bildirir; cihaz IP'leri artık tıklanabilir ve yeni sekmede açılır."
 important = "Uygulama yalnızca yerel yönlendirme ve komşu verilerini okur, ağ ayarlarını değiştirmez."
 
 [pt-pt]
 name = "Localizador MAC LAN"
 auth = "qishiyi"
 descript = "Encontra dispositivos na LAN atual e filtra pelos quatro ultimos caracteres do endereco MAC."
-release_note = "1.0.011: remove dispositivos duplicados encontrados por várias interfaces OVS ou físicas na mesma rede e verifica cada rede apenas uma vez, reduzindo o tempo e as linhas repetidas."
+release_note = "1.0.012: a pesquisa termina após no máximo 10 rondas e indica claramente quando nada é encontrado; os IPs dos dispositivos são agora clicáveis e abrem num novo separador."
 important = "A aplicacao apenas le o encaminhamento local e a tabela de vizinhos sem alterar a configuracao de rede."

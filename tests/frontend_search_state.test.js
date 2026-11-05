@@ -221,3 +221,63 @@ test("visible table rows combine filtering and sorting", () => {
   context.state.tableSortKey = "";
   context.state.tableSortDirection = "ascending";
 });
+
+test("device web links are limited to valid IPv4 addresses", () => {
+  assert.equal(context.deviceWebUrl("192.0.2.19"), "http://192.0.2.19/");
+  assert.equal(context.deviceWebUrl(" 198.51.100.1 "), "http://198.51.100.1/");
+  assert.equal(context.deviceWebUrl("192.0.2.256"), "");
+  assert.equal(context.deviceWebUrl("192.0.2"), "");
+  assert.equal(context.deviceWebUrl("http://192.0.2.1/"), "");
+  assert.equal(context.deviceWebUrl(""), "");
+});
+
+test("continuous search stops after ten consecutive no-match rounds", () => {
+  context.state.continuous = true;
+  context.state.activeSuffix = "ABCD";
+  context.state.noMatchRounds = 0;
+  context.state.lastCountedJobId = "";
+
+  for (let round = 1; round <= 10; round += 1) {
+    const outcome = context.registerContinuousRound("job-" + round, 0);
+    assert.equal(outcome.changed, true);
+    assert.equal(outcome.rounds, round);
+    assert.equal(outcome.exhausted, round === 10);
+  }
+  assert.equal(context.state.noMatchRounds, 10);
+  assert.equal(context.continuousExhaustedMessage().includes("10 轮"), true);
+  assert.equal(context.continuousExhaustedMessage().includes("ABCD"), true);
+
+  context.state.continuous = false;
+  context.state.noMatchRounds = 0;
+  context.state.lastCountedJobId = "";
+  context.state.activeSuffix = "";
+});
+
+test("repeated job ids count once and matches reset the no-match counter", () => {
+  context.state.continuous = true;
+  context.state.activeSuffix = "ABCD";
+  context.state.noMatchRounds = 0;
+  context.state.lastCountedJobId = "";
+
+  let outcome = context.registerContinuousRound("job-a", 0);
+  assert.equal(outcome.rounds, 1);
+  outcome = context.registerContinuousRound("job-a", 0);
+  assert.equal(outcome.changed, false);
+  assert.equal(context.state.noMatchRounds, 1);
+
+  outcome = context.registerContinuousRound("job-b", 2);
+  assert.equal(outcome.found, true);
+  assert.equal(context.state.noMatchRounds, 0);
+
+  outcome = context.registerContinuousRound("job-c", 0);
+  assert.equal(outcome.rounds, 1);
+
+  context.state.continuous = false;
+  outcome = context.registerContinuousRound("job-d", 0);
+  assert.equal(outcome.changed, false);
+  assert.equal(context.state.noMatchRounds, 1);
+
+  context.state.noMatchRounds = 0;
+  context.state.lastCountedJobId = "";
+  context.state.activeSuffix = "";
+});

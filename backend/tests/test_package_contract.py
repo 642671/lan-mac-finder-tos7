@@ -145,6 +145,12 @@ class PackageContractTests(unittest.TestCase):
         self.assertIn("var MIN_WORKSPACE_WIDTH = 560", script)
         self.assertIn("var MIN_NETWORK_PANE_HEIGHT = 200", script)
         self.assertIn("当前没有搜索到", script)
+        self.assertIn("var MAX_NO_MATCH_ROUNDS = 10", script)
+        self.assertIn("轮询查找结束", script)
+        self.assertIn("最终没有找到", script)
+        self.assertIn("deviceWebUrl", script)
+        self.assertIn('target = "_blank"', script)
+        self.assertIn('rel = "noopener noreferrer"', script)
         titlebar = html.split('class="titlebar-actions"', 1)[1].split("</header>", 1)[0]
         self.assertNotIn('id="themeToggle"', titlebar)
 
