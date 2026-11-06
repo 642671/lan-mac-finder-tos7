@@ -138,6 +138,12 @@ class PackageContractTests(unittest.TestCase):
         styles = (ROOT / "frontend" / "styles.css").read_text(encoding="utf-8")
         self.assertNotIn(".suffix-input-list.is-multiple", styles)
         self.assertIn(".remove-suffix-button", styles)
+        self.assertIn(".field-label-row", styles)
+        self.assertIn("scrollbar-gutter: stable", styles)
+        self.assertRegex(
+            styles,
+            r"\.field-label-row\s*\{[^}]*position:\s*sticky",
+        )
         self.assertIn('id="selectAllNetworksButton"', html)
         self.assertIn("network_ids", script)
         self.assertIn("network_ids", server)
@@ -163,6 +169,10 @@ class PackageContractTests(unittest.TestCase):
         self.assertIn('rel = "noopener noreferrer"', script)
         self.assertIn('id="suffixInputList"', html)
         self.assertIn('id="addSuffixButton"', html)
+        self.assertLess(
+            html.index('id="addSuffixButton"'),
+            html.index('id="suffixInputList"')
+        )
         self.assertIn('id="targetSummary"', html)
         self.assertIn("var MAX_SUFFIX_INPUTS = 8", script)
         self.assertIn("matched_suffixes", script)

@@ -666,7 +666,35 @@ body.is-resizing-row * {
 .scan-control {
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   border-bottom: 0;
+}
+
+@media (min-width: 821px) {
+  .control-section.scan-control {
+    /* Offset the reserved 10px scrollbar gutter so rows keep a stable width. */
+    padding-top: 0;
+    padding-right: 10px;
+  }
+
+  .scan-control .section-heading {
+    padding-top: 20px;
+  }
+
+  .field-label-row {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--surface-muted);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+}
+
+@media (min-width: 821px) and (max-height: 760px) {
+  .scan-control .section-heading {
+    padding-top: 15px;
+  }
 }
 
 .network-section {
@@ -718,6 +746,23 @@ body.is-resizing-row * {
   color: var(--text-soft);
   font-size: 12px;
   font-weight: 700;
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.field-label-row .field-label {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.field-label-row .add-suffix-button {
+  flex: 0 0 auto;
 }
 
 .input-shell {
@@ -867,7 +912,6 @@ body.is-resizing-row * {
 .suffix-input-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin-top: 8px;
 }

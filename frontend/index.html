@@ -60,7 +60,16 @@
         </div>
 
         <form id="scanForm" class="scan-form" autocomplete="off" novalidate>
-          <label class="field-label" for="macSuffix">MAC 后四位</label>
+          <div class="field-label-row">
+            <label class="field-label" for="macSuffix">MAC 后四位</label>
+            <button id="addSuffixButton" class="add-suffix-button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 5v14"></path>
+                <path d="M5 12h14"></path>
+              </svg>
+              <span>添加一个 MAC</span>
+            </button>
+          </div>
           <div id="suffixInputList" class="suffix-input-list">
             <div class="suffix-input-row" data-suffix-row>
               <div id="inputShell" class="input-shell">
@@ -100,13 +109,6 @@
             </div>
           </div>
           <div class="suffix-input-actions">
-            <button id="addSuffixButton" class="add-suffix-button" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M12 5v14"></path>
-                <path d="M5 12h14"></path>
-              </svg>
-              <span>添加一个 MAC</span>
-            </button>
             <span id="suffixLimitHint" class="field-hint">最多同时搜索 8 个</span>
           </div>
           <p id="inputError" class="field-error" role="alert" hidden></p>
