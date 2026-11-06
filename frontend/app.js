@@ -4,6 +4,10 @@ var APP_ID = "lan-mac-finder";
 var MAC_SUFFIX_PATTERN = /^(?:[0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})$/;
 var SEARCH_INTENT_KEY = "lanMacFinder.searchIntent.v1";
 var NETWORK_SELECTION_KEY = "lanMacFinder.networkSelection.v1";
+var NETWORK_CACHE_KEY = "lanMacFinder.networkCache.v1";
+var DEVICE_CACHE_KEY = "lanMacFinder.deviceCache.v1";
+var DEVICE_CACHE_LIMIT = 1000;
+var NETWORK_FRESHNESS_MS = 5000;
 var SIDEBAR_WIDTH_KEY = "lanMacFinder.layout.sidebarWidth.v1";
 var SCAN_PANE_HEIGHT_KEY = "lanMacFinder.layout.scanPaneHeight.v1";
 var DEFAULT_SIDEBAR_WIDTH = 304;
@@ -55,6 +59,10 @@ var state = {
   networks: [],
   selectedNetworkIds: [],
   networkSelectionTouched: false,
+  networkCacheRestoredAt: 0,
+  networkVerifiedAt: 0,
+  networkVerifying: false,
+  deviceCacheRestoredAt: 0,
   warnings: [],
   devices: [],
   results: [],
@@ -80,6 +88,7 @@ var state = {
   lastCountedJobId: "",
   searchExhausted: false,
   searchFinished: false,
+  roundInterrupted: false,
   inventoryScanning: false,
   searchGeneration: 0,
   retryDelay: SERVICE_RETRY_DELAY_MS,
@@ -206,6 +215,129 @@ function restoreNetworkSelection() {
   state.selectedNetworkIds = stored.selectedNetworkIds.filter(function (id) {
     return typeof id === "string" && !!id;
   });
+}
+
+function isUsableNetwork(network) {
+  return !!network &&
+    typeof network === "object" &&
+    typeof network.interface === "string" &&
+    !!network.interface &&
+    typeof network.scan_range === "string" &&
+    !!network.scan_range &&
+    typeof network.local_ip === "string" &&
+    !!network.local_ip;
+}
+
+function networkSignature(networks) {
+  return (Array.isArray(networks) ? networks : [])
+    .filter(isUsableNetwork)
+    .map(function (network) {
+      return [
+        networkKey(network),
+        network.interface,
+        network.local_ip,
+        network.prefix_length === undefined ? "" : String(network.prefix_length),
+        network.gateway || "",
+        network.scan_range
+      ].join("|");
+    })
+    .sort()
+    .join("\n");
+}
+
+function networkIdsSignature(ids) {
+  return (Array.isArray(ids) ? ids : [])
+    .filter(function (id) {
+      return typeof id === "string" && !!id;
+    })
+    .slice()
+    .sort()
+    .join("|");
+}
+
+function isUsableDevice(device) {
+  return !!device &&
+    typeof device === "object" &&
+    typeof device.interface === "string" &&
+    typeof device.scan_range === "string" &&
+    typeof device.ip === "string" &&
+    typeof device.mac === "string" &&
+    typeof device.state === "string";
+}
+
+function persistNetworkCache() {
+  if (!state.networks.length) {
+    removeStoredValue(NETWORK_CACHE_KEY);
+    return;
+  }
+  writeStoredJson(NETWORK_CACHE_KEY, {
+    savedAt: Date.now(),
+    networks: state.networks,
+    warnings: state.warnings
+  });
+}
+
+function restoreNetworkCache() {
+  var cache = readStoredJson(NETWORK_CACHE_KEY);
+  if (!cache || !Array.isArray(cache.networks)) {
+    return false;
+  }
+  var networks = cache.networks.filter(isUsableNetwork);
+  if (!networks.length) {
+    return false;
+  }
+  var warnings = Array.isArray(cache.warnings)
+    ? cache.warnings.filter(function (item) {
+      return typeof item === "string" && !!item;
+    })
+    : [];
+  setNetworks({ networks: networks, warnings: warnings });
+  state.networkCacheRestoredAt = Number(cache.savedAt) || 0;
+  return true;
+}
+
+function persistDeviceCache(networkIds) {
+  if (!state.devices.length) {
+    removeStoredValue(DEVICE_CACHE_KEY);
+    return;
+  }
+  writeStoredJson(DEVICE_CACHE_KEY, {
+    savedAt: Date.now(),
+    networkSignature: networkSignature(state.networks),
+    networkIds: (Array.isArray(networkIds) ? networkIds : []).slice(),
+    devices: state.devices.slice(0, DEVICE_CACHE_LIMIT)
+  });
+}
+
+function restoreDeviceCache() {
+  var cache = readStoredJson(DEVICE_CACHE_KEY);
+  if (!cache || !Array.isArray(cache.devices)) {
+    return false;
+  }
+  if (String(cache.networkSignature || "") !== networkSignature(state.networks)) {
+    return false;
+  }
+  if (networkIdsSignature(cache.networkIds) !==
+      networkIdsSignature(selectedNetworkIds())) {
+    return false;
+  }
+  var devices = cache.devices.filter(isUsableDevice);
+  if (!devices.length) {
+    return false;
+  }
+  state.devices = devices;
+  state.deviceCacheRestoredAt = Number(cache.savedAt) || 0;
+  if (state.tableMode === "devices") {
+    renderDevices(devices, true);
+    var stamp = formatTime(state.deviceCacheRestoredAt);
+    setText(
+      "resultSummary",
+      "已恢复上次探测到的 " + devices.length + " 台设备" +
+        (stamp ? "（" + stamp + "）" : "") + "。"
+    );
+    setText("scanFooterMeta", "已缓存设备 " + devices.length + " 台");
+  }
+  return true;
 }
 
 function networkSelectionSummary() {
@@ -539,6 +671,7 @@ function restoreSearchIntent() {
   state.continuous = true;
   state.searchFinished = false;
   state.searchExhausted = false;
+  state.roundInterrupted = false;
   state.searchRound = Math.max(0, Math.floor(Number(intent.searchRound) || 0));
   state.noMatchRounds = targets.reduce(function (maximum, target) {
     return Math.max(maximum, target.rounds);
@@ -713,6 +846,7 @@ function resetContinuousRoundTracking() {
   state.lastCountedJobId = "";
   state.searchExhausted = false;
   state.searchFinished = false;
+  state.roundInterrupted = false;
   state.targets.forEach(function (target) {
     target.rounds = 0;
     target.foundCount = 0;
@@ -734,6 +868,15 @@ function targetStatusText(target) {
   if (state.continuous) {
     return "已查 " + Math.min(MAX_NO_MATCH_ROUNDS, target.rounds) + " / " +
       MAX_NO_MATCH_ROUNDS + " 轮 · 等待下一轮";
+  }
+  if (state.roundInterrupted) {
+    return "已停止 · 第 " + Math.min(
+      MAX_NO_MATCH_ROUNDS,
+      target.rounds + 1
+    ) + " / " + MAX_NO_MATCH_ROUNDS + " 轮未完成";
+  }
+  if (target.rounds === 0) {
+    return "已停止 · 未开始查找";
   }
   return "已停止 · 已查 " + Math.min(MAX_NO_MATCH_ROUNDS, target.rounds) +
     " / " + MAX_NO_MATCH_ROUNDS + " 轮";
@@ -1333,7 +1476,12 @@ function validateInput(showError) {
 }
 
 function updateSuffixRowMetadata() {
-  suffixRows().forEach(function (row, index) {
+  var rows = suffixRows();
+  var list = byId("suffixInputList");
+  if (list) {
+    list.classList.toggle("is-multiple", rows.length > 1);
+  }
+  rows.forEach(function (row, index) {
     var input = row.querySelector("input");
     if (input) {
       input.setAttribute(
@@ -1485,9 +1633,11 @@ function updateControls() {
 
   scanButton.disabled = busy || !hasSelection;
   stopButton.disabled = !searchActive || state.stopping;
-  refreshButton.disabled = state.running || state.inventoryScanning;
+  refreshButton.disabled =
+    state.running || state.inventoryScanning || state.networkVerifying;
   emptyRefreshButton.disabled =
     (busy && !state.continuous) ||
+    state.networkVerifying ||
     (state.tableMode === "devices" && state.networks.length > 0 && !hasSelection);
   if (selectAllButton) {
     selectAllButton.disabled = selectionLocked ||
@@ -2387,7 +2537,7 @@ function renderScanStatus(data, notifyTerminal) {
 }
 
 async function refreshNetworks(silent, refreshDeviceList) {
-  if (state.running || state.inventoryScanning) {
+  if (state.running || state.inventoryScanning || state.networkVerifying) {
     return false;
   }
   var isSilent = !!silent;
@@ -2401,7 +2551,9 @@ async function refreshNetworks(silent, refreshDeviceList) {
     var data = await apiRequest("networks", null);
     state.lastRequestErrorKind = "";
     resetServiceRetryDelay();
+    state.networkVerifiedAt = Date.now();
     setNetworks(data);
+    persistNetworkCache();
     if (shouldRefreshDevices && state.tableMode === "devices") {
       await refreshDevices(false);
     }
@@ -2417,27 +2569,110 @@ async function refreshNetworks(silent, refreshDeviceList) {
     return true;
   } catch (error) {
     state.lastRequestErrorKind = error.kind || "";
-    if (!isSilent) {
-      state.networks = [];
-    }
-    state.warnings = [describeError(error)];
+    state.networkVerifiedAt = 0;
+    var message = describeError(error);
+    state.warnings = state.networks.length
+      ? Array.from(new Set(state.warnings.concat([message])))
+      : [message];
     setText(
       "networkSummary",
-      isSilent ? "等待服务恢复" : "网段读取失败"
+      state.networks.length
+        ? "网段刷新失败 · 使用上次结果"
+        : "网段读取失败"
     );
-    if (!isSilent) {
+    if (!state.networks.length) {
       renderNetworkList();
+      if (!isSilent) {
+        setScanState("error", "网段读取失败", message);
+      }
     }
     renderWarnings();
     updateControls();
     if (!isSilent) {
-      setScanState("error", "网段读取失败", describeError(error));
-      toast(describeError(error), true);
+      toast(message, true);
     }
     return false;
   } finally {
     byId("refreshButton").disabled =
-      state.running || state.inventoryScanning;
+      state.running || state.inventoryScanning || state.networkVerifying;
+  }
+}
+
+async function verifyCachedNetworks() {
+  if (state.networkVerifying) {
+    return { ok: false, changed: false, added: [], removed: [] };
+  }
+  state.networkVerifying = true;
+  updateControls();
+  var beforeNetworks = state.networks.slice();
+  var beforeSignature = networkSignature(beforeNetworks);
+  var beforeKeys = {};
+  beforeNetworks.forEach(function (network) {
+    beforeKeys[networkKey(network)] = true;
+  });
+  try {
+    var data = await apiRequest("networks", null);
+    state.lastRequestErrorKind = "";
+    resetServiceRetryDelay();
+    state.networkVerifiedAt = Date.now();
+    var freshNetworks = Array.isArray(data.networks)
+      ? data.networks.filter(isUsableNetwork)
+      : [];
+    var freshKeys = {};
+    freshNetworks.forEach(function (network) {
+      freshKeys[networkKey(network)] = true;
+    });
+    var added = Object.keys(freshKeys).filter(function (key) {
+      return !beforeKeys[key];
+    });
+    var removed = Object.keys(beforeKeys).filter(function (key) {
+      return !freshKeys[key];
+    });
+    var changed = networkSignature(freshNetworks) !== beforeSignature;
+    setNetworks({
+      networks: freshNetworks,
+      warnings: Array.isArray(data.warnings) ? data.warnings : []
+    });
+    persistNetworkCache();
+    if (changed) {
+      var parts = [];
+      if (added.length) {
+        parts.push("新增 " + added.length + " 个网段");
+      }
+      if (removed.length) {
+        parts.push("移除 " + removed.length + " 个失效网段");
+      }
+      setText("networkSummary", "网段已更新 · " + networkSelectionSummary());
+      if (parts.length) {
+        toast(parts.join("，") + "。", false);
+      }
+    } else {
+      setText("networkSummary", "网段未变化 · " + networkSelectionSummary());
+    }
+    if (state.scanStatus === "idle") {
+      setScanState(
+        "idle",
+        "准备就绪",
+        state.networks.length
+          ? networkSelectionSummary() + "。"
+          : "没有找到带默认网关的物理网卡。"
+      );
+    }
+    return { ok: true, changed: changed, added: added, removed: removed };
+  } catch (error) {
+    state.lastRequestErrorKind = error.kind || "";
+    state.networkVerifiedAt = 0;
+    setText("networkSummary", "服务已连接 · 使用上次网段");
+    if (state.tableMode === "devices" && !state.deviceCacheRestoredAt) {
+      setText(
+        "resultSummary",
+        "网段校验失败，显示上次保存的网段；可手动刷新设备总表。"
+      );
+    }
+    return { ok: false, changed: false, added: [], removed: [] };
+  } finally {
+    state.networkVerifying = false;
+    updateControls();
   }
 }
 
@@ -2470,6 +2705,7 @@ async function refreshDevices(showError) {
       { timeoutMs: INVENTORY_REQUEST_TIMEOUT_MS }
     );
     state.devices = Array.isArray(data.devices) ? data.devices : [];
+    persistDeviceCache(networkIds);
     if (Array.isArray(data.warnings) && data.warnings.length) {
       state.warnings = Array.from(new Set(state.warnings.concat(data.warnings)));
       renderWarnings();
@@ -2546,7 +2782,13 @@ async function resumeContinuousSearch() {
     "持续搜索中",
     "正在确认活动网段并准备下一轮搜索。"
   );
-  var networksReady = await refreshNetworks(true, false);
+  var networkCheckFresh =
+    state.networkVerifiedAt > 0 &&
+    Date.now() - state.networkVerifiedAt <= NETWORK_FRESHNESS_MS;
+  var networksReady = true;
+  if (!state.networkVerifying && !networkCheckFresh) {
+    networksReady = await refreshNetworks(true, false);
+  }
   if (
     generation !== state.searchGeneration ||
     !state.continuous ||
@@ -2800,6 +3042,7 @@ async function stopScan() {
   }
   state.searchGeneration += 1;
   var generation = state.searchGeneration;
+  state.roundInterrupted = state.running;
   state.continuous = false;
   state.searchFinished = false;
   discardSearchIntent();
@@ -3400,11 +3643,50 @@ async function boot() {
   bindEvents();
   bindTooltips();
   var restored = restoreSearchIntent();
+  var cachedNetworks = restoreNetworkCache();
   restoreNetworkSelection();
+  var cachedDevices = false;
+  if (cachedNetworks) {
+    cachedDevices = restoreDeviceCache();
+    updateNetworkSummary();
+    renderNetworkList();
+    setText(
+      "networkSummary",
+      "已恢复上次网段" +
+        (state.networkCacheRestoredAt
+          ? "（" + formatTime(state.networkCacheRestoredAt) + "）"
+          : "")
+    );
+    if (!restored && !cachedDevices) {
+      setText("resultSummary", "已恢复上次网段，正在后台快速校验。");
+    }
+  }
   updateControls();
+  if (cachedNetworks) {
+    if (!restored) {
+      setScanState(
+        "idle",
+        "准备就绪",
+        state.networks.length
+          ? networkSelectionSummary() + "。"
+          : "没有找到带默认网关的物理网卡。"
+      );
+    }
+    renderWarnings();
+  }
   var online = await checkBackend(restored);
   if (online) {
-    await refreshNetworks(restored, true);
+    if (cachedNetworks) {
+      var verification = await verifyCachedNetworks();
+      if (
+        state.tableMode === "devices" &&
+        (!cachedDevices || (verification.ok && verification.changed))
+      ) {
+        await refreshDevices(false);
+      }
+    } else {
+      await refreshNetworks(restored, true);
+    }
     try {
       var status = await apiRequest("scan/status", null);
       var statusSuffixes = Array.isArray(status.suffixes) && status.suffixes.length
@@ -3451,12 +3733,19 @@ async function boot() {
       }
     }
   } else {
-    state.networks = [];
-    state.warnings = [describeError(new Error("backend unavailable"))];
-    setText("networkSummary", "服务未连接");
-    renderNetworkList();
-    renderWarnings();
-    updateControls();
+    if (!cachedNetworks) {
+      state.networks = [];
+      state.warnings = [describeError(new Error("backend unavailable"))];
+      setText("networkSummary", "服务未连接");
+      renderNetworkList();
+      renderWarnings();
+      updateControls();
+    } else {
+      setText("networkSummary", "服务未连接 · 使用上次网段");
+      if (state.tableMode === "devices" && !cachedDevices) {
+        setText("resultSummary", "服务未连接，当前显示上次保存的网段。");
+      }
+    }
     if (state.continuous) {
       showContinuousWaiting(
         "等待 NAS 恢复",

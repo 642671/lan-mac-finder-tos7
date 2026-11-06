@@ -828,6 +828,11 @@ body.is-resizing-row * {
   flex: 1 1 auto;
 }
 
+/* 首个输入框没有移除按钮，多行时预留同宽空间，保持所有输入框等宽 */
+.suffix-input-list.is-multiple .suffix-input-row:first-child {
+  padding-right: 42px;
+}
+
 .remove-suffix-button {
   display: inline-flex;
   width: 34px;

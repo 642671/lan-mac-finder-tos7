@@ -400,3 +400,94 @@ test("matched suffixes prefer backend annotation and fall back to the MAC", () =
     false
   );
 });
+
+test("network and device cache signatures detect real changes", () => {
+  const first = {
+    interface: "enp1s0",
+    network_id: "enp1s0|192.0.2.0/24",
+    scan_range: "192.0.2.0/24",
+    local_ip: "192.0.2.25",
+    prefix_length: 24,
+    gateway: "192.0.2.1"
+  };
+  const second = {
+    interface: "enp2s0",
+    network_id: "enp2s0|198.51.100.0/24",
+    scan_range: "198.51.100.0/24",
+    local_ip: "198.51.100.40",
+    prefix_length: 24,
+    gateway: "198.51.100.1"
+  };
+
+  assert.equal(context.isUsableNetwork(first), true);
+  assert.equal(
+    context.isUsableNetwork({ interface: "enp1s0", scan_range: "192.0.2.0/24" }),
+    false
+  );
+  assert.equal(
+    context.networkSignature([first, second]),
+    context.networkSignature([second, first])
+  );
+  assert.equal(
+    context.networkSignature([first, { interface: "broken" }]),
+    context.networkSignature([first])
+  );
+  assert.notEqual(
+    context.networkSignature([first]),
+    context.networkSignature([Object.assign({}, first, {
+      local_ip: "192.0.2.99"
+    })])
+  );
+  assert.equal(
+    context.networkIdsSignature(["enp2s0|198.51.100.0/24", "enp1s0|192.0.2.0/24"]),
+    context.networkIdsSignature(["enp1s0|192.0.2.0/24", "enp2s0|198.51.100.0/24"])
+  );
+  assert.notEqual(
+    context.networkIdsSignature(["enp1s0|192.0.2.0/24"]),
+    context.networkIdsSignature([
+      "enp1s0|192.0.2.0/24",
+      "enp2s0|198.51.100.0/24"
+    ])
+  );
+  assert.equal(context.isUsableDevice({
+    interface: "enp1s0",
+    scan_range: "192.0.2.0/24",
+    ip: "192.0.2.9",
+    mac: "02-42-AC-11-00-09",
+    state: "REACHABLE"
+  }), true);
+  assert.equal(context.isUsableDevice({ interface: "enp1s0" }), false);
+});
+
+test("stopped targets distinguish an unfinished round from a round not started", () => {
+  const saved = {
+    continuous: context.state.continuous,
+    running: context.state.running,
+    roundInterrupted: context.state.roundInterrupted
+  };
+  const target = {
+    display: "AB-CD",
+    normalized: "ABCD",
+    rounds: 0,
+    foundCount: 0,
+    status: "searching"
+  };
+
+  context.state.continuous = false;
+  context.state.running = false;
+  context.state.roundInterrupted = true;
+  assert.equal(
+    context.targetStatusText(target),
+    "已停止 · 第 1 / 10 轮未完成"
+  );
+
+  context.state.roundInterrupted = false;
+  assert.equal(context.targetStatusText(target), "已停止 · 未开始查找");
+
+  target.rounds = 3;
+  assert.equal(context.targetStatusText(target), "已停止 · 已查 3 / 10 轮");
+
+  context.state.continuous = saved.continuous;
+  context.state.running = saved.running;
+  context.state.roundInterrupted = saved.roundInterrupted;
+});
