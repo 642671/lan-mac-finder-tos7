@@ -3,7 +3,7 @@
 `lan-mac-finder` is a TOS 7 iframe Deb application for finding devices in the
 NAS's current physical LAN by the last four characters of their MAC address.
 
-Current version: `1.0.012`.
+Current version: `1.0.013`.
 
 ## Features
 
@@ -21,6 +21,17 @@ Current version: `1.0.012`.
   when the local `ping` command is available.
 - Read `REACHABLE`, `STALE`, `DELAY`, and `PROBE` neighbor records.
 - Match `AA-BB`, `AA:BB`, and `AABB` suffixes case-insensitively.
+- Start with one MAC input and add up to 8 search targets one at a time with
+  “添加一个 MAC”; duplicate suffixes are rejected and each added row can be
+  removed again.
+- Search every entered suffix in the same sweep and annotate rows with the
+  matched targets. The match table gains a target column when more than one
+  suffix is searched, and a per-target summary shows how many devices each
+  target found.
+- Track polling per target: a found suffix stops counting while suffixes that
+  are still missing continue their own 10-round budget. The search stops as
+  soon as every suffix is found or has exhausted its rounds, and the final
+  message lists which suffixes were found and which were not found.
 - Preserve the exact casing typed in the input while comparing the normalized suffix.
 - Keep incomplete input neutral while the field is focused, while rejecting
   overlong fragments immediately and exposing the error state to assistive
@@ -43,9 +54,11 @@ Current version: `1.0.012`.
   physical networks, retains the latest match while the next scan is running,
   shows the no-match state when a completed scan returns no devices, retries
   after temporary NAS or API loss, and resumes after the WebUI reloads.
-- Limit automatic polling to 10 consecutive no-match rounds. After the tenth
-  round the app stops polling and clearly reports that the search ultimately
-  found no device; a successful match resets the counter.
+- Limit automatic polling to 10 rounds per target. Targets that have already
+  matched stop consuming rounds, missing targets each keep their own 10-round
+  budget, and polling stops once every target is resolved. A finished search
+  clearly reports which suffixes were found and which were ultimately not
+  found, instead of staying at the first round forever.
 - Open a device's IP address in a new browser tab by clicking it in either the
   device overview or the match table, without interfering with row selection,
   double-click MAC copy, or keyboard row actions.
@@ -185,7 +198,7 @@ Generated packages and SHA256 files are written to `dist/`.
 For a test NAS:
 
 ```bash
-sudo dpkg -i lan-mac-finder_1.0.012_x86_64.deb
+sudo dpkg -i lan-mac-finder_1.0.013_x86_64.deb
 systemctl status lanmacfinder-system.service
 curl --unix-socket /var/api/lan-mac-finder.sock http://localhost/health
 ```
@@ -226,8 +239,8 @@ Then run tests, build both architectures, commit, tag, and push:
 
 ```powershell
 git add -A
-git commit -m "release: v1.0.012"
+git commit -m "release: v1.0.013"
 git push origin main
-git tag -a v1.0.012 -m "LAN MAC Finder v1.0.012"
-git push origin v1.0.012
+git tag -a v1.0.013 -m "LAN MAC Finder v1.0.013"
+git push origin v1.0.013
 ```

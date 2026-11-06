@@ -61,38 +61,53 @@
 
         <form id="scanForm" class="scan-form" autocomplete="off" novalidate>
           <label class="field-label" for="macSuffix">MAC 后四位</label>
-          <div id="inputShell" class="input-shell">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <rect x="3" y="5" width="18" height="14" rx="2"></rect>
-              <path d="M7 9h2"></path>
-              <path d="M11 9h2"></path>
-              <path d="M15 9h2"></path>
-              <path d="M7 13h2"></path>
-              <path d="M11 13h2"></path>
-              <path d="M15 13h2"></path>
-            </svg>
-            <input
-              id="macSuffix"
-              name="macSuffix"
-              type="text"
-              placeholder="AA-BB / AA:BB / AABB"
-              spellcheck="false"
-              autocomplete="off"
-              autocapitalize="none"
-              aria-invalid="false"
-              aria-describedby="inputError">
-            <button
-              id="inputClearButton"
-              class="input-clear-button"
-              type="button"
-              aria-label="清除搜索"
-              data-tooltip="清除搜索并恢复设备总表"
-              hidden>
+          <div id="suffixInputList" class="suffix-input-list">
+            <div class="suffix-input-row" data-suffix-row>
+              <div id="inputShell" class="input-shell">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                  <path d="M7 9h2"></path>
+                  <path d="M11 9h2"></path>
+                  <path d="M15 9h2"></path>
+                  <path d="M7 13h2"></path>
+                  <path d="M11 13h2"></path>
+                  <path d="M15 13h2"></path>
+                </svg>
+                <input
+                  id="macSuffix"
+                  name="macSuffix"
+                  type="text"
+                  placeholder="AA-BB / AA:BB / AABB"
+                  spellcheck="false"
+                  autocomplete="off"
+                  autocapitalize="none"
+                  aria-invalid="false"
+                  aria-describedby="inputError"
+                  data-suffix-input>
+                <button
+                  id="inputClearButton"
+                  class="input-clear-button"
+                  type="button"
+                  aria-label="清除搜索"
+                  data-tooltip="清除搜索并恢复设备总表"
+                  hidden>
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M6 6 18 18"></path>
+                    <path d="M18 6 6 18"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="suffix-input-actions">
+            <button id="addSuffixButton" class="add-suffix-button" type="button">
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M6 6 18 18"></path>
-                <path d="M18 6 6 18"></path>
+                <path d="M12 5v14"></path>
+                <path d="M5 12h14"></path>
               </svg>
+              <span>添加一个 MAC</span>
             </button>
+            <span id="suffixLimitHint" class="field-hint">最多同时搜索 8 个</span>
           </div>
           <p id="inputError" class="field-error" role="alert" hidden></p>
 
@@ -319,6 +334,11 @@
           <span id="tableFilterSummary" class="table-filter-summary" aria-live="polite"></span>
         </div>
 
+        <div id="targetSummary" class="target-summary" hidden>
+          <span class="target-summary-label">查找目标</span>
+          <div id="targetChips" class="target-chips" aria-live="polite"></div>
+        </div>
+
         <div id="tableWrap" class="table-wrap" hidden>
           <table class="results-table">
             <thead>
@@ -335,6 +355,7 @@
                 <th scope="col" data-sort-key="mac" aria-sort="none">
                   <button class="sort-button" type="button" data-sort-key="mac">MAC 地址</button>
                 </th>
+                <th scope="col" class="target-column">匹配后缀</th>
                 <th scope="col" data-sort-key="state" aria-sort="none">
                   <button class="sort-button" type="button" data-sort-key="state">状态</button>
                 </th>

@@ -21,6 +21,7 @@ from typing import Callable, Iterable, Sequence
 APP_ID = "lan-mac-finder"
 DEFAULT_MAX_HOSTS = 1022
 DEFAULT_CONCURRENCY = 64
+MAX_SCAN_SUFFIXES = 8
 MAX_NETWORK_SELECTION = 64
 MAX_NETWORK_ID_LENGTH = 256
 ALLOWED_NEIGHBOR_STATES = {"REACHABLE", "STALE", "DELAY", "PROBE"}
@@ -144,6 +145,33 @@ def normalize_mac_suffix(value: str) -> str | None:
     return re.sub(r"[-:]", "", text).upper()
 
 
+def normalize_mac_suffixes(value: object) -> list[str]:
+    """Normalize one suffix or a list of suffixes for a multi-target scan."""
+
+    if isinstance(value, str):
+        values: list[object] = [value]
+    elif isinstance(value, (list, tuple)):
+        values = list(value)
+    else:
+        raise ValueError("MAC suffixes must be an array")
+
+    suffixes: list[str] = []
+    for item in values:
+        if not isinstance(item, str):
+            raise ValueError("MAC suffixes must be strings")
+        normalized = normalize_mac_suffix(item)
+        if normalized is None:
+            raise ValueError("MAC suffix must use AA-BB, AA:BB, or AABB format")
+        if normalized not in suffixes:
+            suffixes.append(normalized)
+
+    if not suffixes:
+        raise ValueError("at least one MAC suffix is required")
+    if len(suffixes) > MAX_SCAN_SUFFIXES:
+        raise ValueError(f"at most {MAX_SCAN_SUFFIXES} MAC suffixes are allowed")
+    return suffixes
+
+
 def normalize_mac(value: str) -> str | None:
     text = str(value or "").strip().replace("-", "").replace(":", "")
     if re.fullmatch(r"[0-9A-Fa-f]{12}", text) is None:
@@ -165,12 +193,37 @@ def parse_ipv4_network(address: str, prefix_length: int) -> ipaddress.IPv4Networ
     return network
 
 
+def network_host_count(network: ipaddress.IPv4Network) -> int:
+    """Count probe targets without materializing every address in the subnet."""
+
+    if network.prefixlen <= 30:
+        return max(0, network.num_addresses - 2)
+    if network.prefixlen == 31:
+        return 2
+    return 1
+
+
 def network_hosts(network: ipaddress.IPv4Network) -> list[ipaddress.IPv4Address]:
     if network.prefixlen <= 30:
         return list(network.hosts())
     if network.prefixlen == 31:
         return list(network)
     return [network.network_address]
+
+
+def is_scannable_local_address(address: str) -> bool:
+    """Reject addresses that cannot identify a real LAN interface."""
+
+    try:
+        parsed = ipaddress.IPv4Address(str(address or "").strip())
+    except ValueError:
+        return False
+    return not (
+        parsed.is_unspecified
+        or parsed.is_loopback
+        or parsed.is_link_local
+        or parsed.is_multicast
+    )
 
 
 def is_virtual_interface(name: str) -> bool:
@@ -298,7 +351,7 @@ def discover_networks(
             continue
         for address in interface_addresses:
             local_ip = str(address.get("local") or "")
-            if local_ip.startswith("169.254."):
+            if not is_scannable_local_address(local_ip):
                 continue
             try:
                 network = parse_ipv4_network(local_ip, int(address["prefixlen"]))
@@ -308,10 +361,10 @@ def discover_networks(
             key = (interface, str(network))
             if key in seen:
                 continue
-            hosts = network_hosts(network)
-            if len(hosts) > limit:
+            host_count = network_host_count(network)
+            if host_count > limit:
                 warnings.append(
-                    f"{interface} 的 {network} 包含 {len(hosts)} 台主机，"
+                    f"{interface} 的 {network} 包含 {host_count} 台主机，"
                     f"超过安全上限 {limit}，已跳过"
                 )
                 continue
@@ -325,7 +378,7 @@ def discover_networks(
                 network=str(network.network_address),
                 broadcast=str(network.broadcast_address),
                 scan_range=str(network),
-                host_count=len(hosts),
+                host_count=host_count,
                 local_source=str(address.get("local") or ""),
                 local_mac=interface_macs.get(interface, ""),
             )
@@ -559,6 +612,35 @@ def match_neighbor_records(
     return matches
 
 
+def match_neighbor_records_multi(
+    records: Iterable[NeighborRecord],
+    suffixes: Sequence[str] | str,
+    scan_range: str,
+) -> list[dict]:
+    """Return neighbor matches annotated with every requested suffix they hit."""
+
+    normalized_suffixes = normalize_mac_suffixes(suffixes)
+    matches: list[dict] = []
+    for record in records:
+        compact = record.mac.replace("-", "")
+        matched = [
+            suffix for suffix in normalized_suffixes if compact.endswith(suffix)
+        ]
+        if not matched:
+            continue
+        matches.append(
+            {
+                "interface": record.interface,
+                "scan_range": scan_range,
+                "ip": record.ip,
+                "mac": record.mac,
+                "state": record.state,
+                "matched_suffixes": matched,
+            }
+        )
+    return matches
+
+
 def _sort_results(results: Iterable[dict]) -> list[dict]:
     def key(item: dict) -> tuple:
         try:
@@ -580,10 +662,16 @@ def _merge_device(unique: dict[tuple[str, str, str], dict], item: dict) -> None:
     if existing is None:
         unique[key] = dict(item)
         return
+    suffixes = list(existing.get("matched_suffixes") or [])
+    for suffix in item.get("matched_suffixes") or []:
+        if suffix not in suffixes:
+            suffixes.append(suffix)
     item_priority = DEVICE_STATE_PRIORITY.get(str(item.get("state", "")), 0)
     existing_priority = DEVICE_STATE_PRIORITY.get(str(existing.get("state", "")), 0)
-    if item_priority > existing_priority:
-        unique[key] = dict(item)
+    merged = dict(item) if item_priority > existing_priority else dict(existing)
+    if suffixes:
+        merged["matched_suffixes"] = sorted(suffixes)
+    unique[key] = merged
 
 
 def _merge_devices(results: Iterable[dict]) -> dict[tuple[str, str, str], dict]:
@@ -693,6 +781,32 @@ def match_local_target(target: NetworkTarget, suffix: str) -> list[dict]:
     ]
 
 
+def match_local_target_multi(
+    target: NetworkTarget,
+    suffixes: Sequence[str] | str,
+) -> list[dict]:
+    normalized_suffixes = normalize_mac_suffixes(suffixes)
+    local_mac = normalize_mac(target.local_mac)
+    if local_mac is None:
+        return []
+    compact = local_mac.replace("-", "")
+    matched = [
+        suffix for suffix in normalized_suffixes if compact.endswith(suffix)
+    ]
+    if not matched:
+        return []
+    return [
+        {
+            "interface": target.interface,
+            "scan_range": target.scan_range,
+            "ip": target.local_ip,
+            "mac": local_mac,
+            "state": "LOCAL",
+            "matched_suffixes": matched,
+        }
+    ]
+
+
 class ScanManager:
     """Run one scan at a time and expose polling-friendly state."""
 
@@ -720,6 +834,7 @@ class ScanManager:
             "stopping": False,
             "job_id": "",
             "suffix": "",
+            "suffixes": [],
             "selected_network_ids": [],
             "started_at": None,
             "finished_at": None,
@@ -737,6 +852,7 @@ class ScanManager:
     def status(self) -> dict:
         with self._lock:
             snapshot = dict(self._state)
+            snapshot["suffixes"] = list(self._state["suffixes"])
             snapshot["selected_network_ids"] = list(
                 self._state["selected_network_ids"]
             )
@@ -747,12 +863,10 @@ class ScanManager:
 
     def start(
         self,
-        suffix: str,
+        suffixes: Sequence[str] | str,
         network_ids: Sequence[str] | None = None,
     ) -> bool:
-        normalized = normalize_mac_suffix(suffix)
-        if normalized is None:
-            raise ValueError("MAC suffix must be AA-BB, AA:BB, or AABB")
+        normalized = normalize_mac_suffixes(suffixes)
         selected_network_ids = normalize_network_ids(network_ids)
         with self._lock:
             if self._state["running"]:
@@ -769,7 +883,8 @@ class ScanManager:
                     "status": "discovering",
                     "running": True,
                     "job_id": uuid.uuid4().hex,
-                    "suffix": normalized,
+                    "suffix": normalized[0],
+                    "suffixes": normalized,
                     "selected_network_ids": selected_network_ids or [],
                     "started_at": datetime.now().isoformat(timespec="seconds"),
                 }
@@ -790,13 +905,14 @@ class ScanManager:
 
     def matches_request(
         self,
-        suffix: str,
+        suffixes: Sequence[str] | str,
         network_ids: Sequence[str] | None = None,
     ) -> bool:
-        normalized = normalize_mac_suffix(suffix)
+        normalized = normalize_mac_suffixes(suffixes)
         requested = normalize_network_ids(network_ids)
         with self._lock:
-            if self._state["suffix"] != normalized:
+            active_suffixes = self._state["suffixes"] or [self._state["suffix"]]
+            if set(active_suffixes) != set(normalized):
                 return False
             active = self._requested_network_ids
             if active is None or requested is None:
@@ -830,7 +946,7 @@ class ScanManager:
     def _run(
         self,
         job_id: str,
-        suffix: str,
+        suffixes: list[str],
         cancel_event: threading.Event,
         selected_network_ids: list[str] | None,
     ) -> None:
@@ -891,10 +1007,14 @@ class ScanManager:
                     on_progress,
                 )
                 for member in group:
-                    self._append_results(match_local_target(member, suffix))
+                    self._append_results(match_local_target_multi(member, suffixes))
                     records = self._neighbors(member.interface)
                     self._append_results(
-                        match_neighbor_records(records, suffix, member.scan_range)
+                        match_neighbor_records_multi(
+                            records,
+                            suffixes,
+                            member.scan_range,
+                        )
                     )
                 probed_before += target.host_count
 

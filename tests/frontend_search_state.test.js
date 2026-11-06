@@ -231,53 +231,172 @@ test("device web links are limited to valid IPv4 addresses", () => {
   assert.equal(context.deviceWebUrl(""), "");
 });
 
-test("continuous search stops after ten consecutive no-match rounds", () => {
+function resetContinuousState(entries) {
   context.state.continuous = true;
-  context.state.activeSuffix = "ABCD";
+  context.state.running = false;
+  context.state.targets = context.buildTargets(entries);
+  context.syncActiveSuffixState();
   context.state.noMatchRounds = 0;
+  context.state.searchRound = 0;
+  context.state.searchFinished = false;
+  context.state.searchExhausted = false;
   context.state.lastCountedJobId = "";
+}
+
+function matchedDevice(suffix, ip) {
+  return {
+    interface: "enp1s0",
+    scan_range: "192.0.2.0/24",
+    ip: ip,
+    mac: "02-42-AC-11-" + suffix.slice(0, 2) + "-" + suffix.slice(2),
+    state: "REACHABLE",
+    matched_suffixes: [suffix]
+  };
+}
+
+test("continuous search stops after ten no-match rounds and reports not found", () => {
+  resetContinuousState([{ display: "AB-CD", normalized: "ABCD" }]);
 
   for (let round = 1; round <= 10; round += 1) {
-    const outcome = context.registerContinuousRound("job-" + round, 0);
-    assert.equal(outcome.changed, true);
+    const outcome = context.registerContinuousRound("job-" + round, []);
+    assert.equal(outcome.counted, true);
     assert.equal(outcome.rounds, round);
     assert.equal(outcome.exhausted, round === 10);
+    assert.equal(outcome.allResolved, round === 10);
+    assert.equal(outcome.changed, round === 10);
   }
-  assert.equal(context.state.noMatchRounds, 10);
+  assert.equal(context.state.searchRound, 10);
+  assert.equal(context.state.targets[0].status, "not-found");
+  assert.equal(context.continuousRoundLabel(), "第 10 / 10 轮");
   assert.equal(context.continuousExhaustedMessage().includes("10 轮"), true);
-  assert.equal(context.continuousExhaustedMessage().includes("ABCD"), true);
+  assert.equal(context.continuousExhaustedMessage().includes("AB-CD"), true);
 
-  context.state.continuous = false;
-  context.state.noMatchRounds = 0;
-  context.state.lastCountedJobId = "";
-  context.state.activeSuffix = "";
+  resetContinuousState([{ display: "AB-CD", normalized: "ABCD" }]);
+  context.state.targets[0].status = "not-found";
+  context.state.targets[0].rounds = 10;
+  context.state.running = true;
+  assert.equal(context.targetStatusText(context.state.targets[0]), "已查 10 轮 · 未找到");
 });
 
-test("repeated job ids count once and matches reset the no-match counter", () => {
-  context.state.continuous = true;
-  context.state.activeSuffix = "ABCD";
-  context.state.noMatchRounds = 0;
-  context.state.lastCountedJobId = "";
+test("a completed job id is counted only once", () => {
+  resetContinuousState([{ display: "ABCD", normalized: "ABCD" }]);
 
-  let outcome = context.registerContinuousRound("job-a", 0);
+  let outcome = context.registerContinuousRound("job-a", []);
+  assert.equal(outcome.counted, true);
   assert.equal(outcome.rounds, 1);
-  outcome = context.registerContinuousRound("job-a", 0);
-  assert.equal(outcome.changed, false);
-  assert.equal(context.state.noMatchRounds, 1);
 
-  outcome = context.registerContinuousRound("job-b", 2);
+  outcome = context.registerContinuousRound("job-a", []);
+  assert.equal(outcome.counted, false);
+  assert.equal(outcome.changed, false);
+  assert.equal(context.state.searchRound, 1);
+  assert.equal(context.state.targets[0].rounds, 1);
+});
+
+test("a found target resolves while other targets keep polling", () => {
+  resetContinuousState([
+    { display: "AB-CD", normalized: "ABCD" },
+    { display: "EF-01", normalized: "EF01" }
+  ]);
+
+  let outcome = context.registerContinuousRound(
+    "job-1",
+    [matchedDevice("ABCD", "192.0.2.10")]
+  );
   assert.equal(outcome.found, true);
-  assert.equal(context.state.noMatchRounds, 0);
+  assert.equal(outcome.allResolved, false);
+  assert.equal(outcome.exhausted, false);
+  assert.equal(context.state.targets[0].status, "found");
+  assert.equal(context.state.targets[0].foundCount, 1);
+  assert.equal(context.state.targets[1].status, "searching");
+  assert.equal(context.state.targets[1].rounds, 1);
 
-  outcome = context.registerContinuousRound("job-c", 0);
-  assert.equal(outcome.rounds, 1);
+  for (let round = 2; round <= 9; round += 1) {
+    outcome = context.registerContinuousRound("job-" + round, []);
+    assert.equal(outcome.allResolved, false);
+    assert.equal(outcome.exhausted, false);
+  }
+  assert.equal(context.state.targets[0].status, "found");
+  assert.equal(context.state.targets[0].foundCount, 1);
 
-  context.state.continuous = false;
-  outcome = context.registerContinuousRound("job-d", 0);
-  assert.equal(outcome.changed, false);
-  assert.equal(context.state.noMatchRounds, 1);
+  outcome = context.registerContinuousRound("job-10", []);
+  assert.equal(outcome.allResolved, true);
+  assert.equal(outcome.exhausted, true);
+  assert.equal(context.state.targets[1].status, "not-found");
 
-  context.state.noMatchRounds = 0;
-  context.state.lastCountedJobId = "";
-  context.state.activeSuffix = "";
+  const message = context.searchFinishedMessage();
+  assert.equal(message.includes("AB-CD 找到 1 台设备"), true);
+  assert.equal(message.includes("EF-01 已完成 10 轮，未找到"), true);
+});
+
+test("all targets found ends the search without waiting for ten rounds", () => {
+  resetContinuousState([
+    { display: "AB-CD", normalized: "ABCD" },
+    { display: "EF-01", normalized: "EF01" }
+  ]);
+
+  const outcome = context.registerContinuousRound("job-1", [
+    matchedDevice("ABCD", "192.0.2.10"),
+    matchedDevice("EF01", "192.0.2.11")
+  ]);
+  assert.equal(outcome.found, true);
+  assert.equal(outcome.allResolved, true);
+  assert.equal(outcome.exhausted, false);
+  assert.equal(context.state.targets[0].status, "found");
+  assert.equal(context.state.targets[1].status, "found");
+  assert.equal(context.searchFinishedMessage().includes("查找完成"), true);
+});
+
+test("round results merge per device and keep every matched suffix", () => {
+  const first = matchedDevice("ABCD", "192.0.2.10");
+  const second = matchedDevice("EF01", "192.0.2.11");
+  const merged = context.mergeResultItems([first], [first, second]);
+  assert.equal(merged.length, 2);
+  assert.equal(
+    JSON.stringify(merged.map((item) => item.ip)),
+    JSON.stringify(["192.0.2.10", "192.0.2.11"])
+  );
+
+  const shared = {
+    interface: "enp1s0",
+    scan_range: "192.0.2.0/24",
+    ip: "192.0.2.12",
+    mac: "02-42-AC-11-AB-CD",
+    state: "REACHABLE",
+    matched_suffixes: ["ABCD"]
+  };
+  const mergedShared = context.mergeResultItems(
+    [shared],
+    [Object.assign({}, shared, { matched_suffixes: ["CD"] })]
+  );
+  assert.equal(mergedShared.length, 1);
+  assert.equal(
+    JSON.stringify(mergedShared[0].matched_suffixes),
+    JSON.stringify(["ABCD", "CD"])
+  );
+});
+
+test("matched suffixes prefer backend annotation and fall back to the MAC", () => {
+  const target = { display: "AB-CD", normalized: "ABCD", status: "searching" };
+  assert.equal(
+    context.resultMatchesTarget(
+      { mac: "02-42-AC-11-AB-CD", matched_suffixes: ["ABCD"] },
+      target
+    ),
+    true
+  );
+  assert.equal(
+    context.resultMatchesTarget(
+      { mac: "02-42-AC-11-AB-CD", matched_suffixes: ["EF01"] },
+      target
+    ),
+    false
+  );
+  assert.equal(
+    context.resultMatchesTarget({ mac: "02-42-AC-11-AB-CD" }, target),
+    true
+  );
+  assert.equal(
+    context.resultMatchesTarget({ mac: "02-42-AC-11-EF-01" }, target),
+    false
+  );
 });

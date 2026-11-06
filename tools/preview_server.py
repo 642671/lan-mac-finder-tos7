@@ -151,6 +151,7 @@ class PreviewState:
             "stopping": False,
             "job_id": "",
             "suffix": "",
+            "suffixes": [],
             "selected_network_ids": [],
             "requested_network_ids": None,
             "started_at": None,
@@ -172,7 +173,7 @@ class PreviewState:
 
     def start(
         self,
-        suffix: str,
+        suffixes: list[str],
         networks: list[dict],
         requested_network_ids: list[str] | None = None,
     ) -> bool:
@@ -186,7 +187,8 @@ class PreviewState:
                 {
                     "status": "discovering",
                     "running": True,
-                    "suffix": suffix,
+                    "suffix": suffixes[0],
+                    "suffixes": list(suffixes),
                     "selected_network_ids": [network_key(network) for network in networks],
                     "requested_network_ids": (
                         None
@@ -199,7 +201,7 @@ class PreviewState:
             )
         threading.Thread(
             target=self._run,
-            args=(suffix, self.cancel, networks),
+            args=(list(suffixes), self.cancel, networks),
             daemon=True,
             name="preview-scan",
         ).start()
@@ -207,11 +209,11 @@ class PreviewState:
 
     def matches_request(
         self,
-        suffix: str,
+        suffixes: list[str],
         network_ids: list[str] | None = None,
     ) -> bool:
         with self.lock:
-            if self.data["suffix"] != suffix:
+            if set(self.data["suffixes"]) != set(suffixes):
                 return False
             active = self.data.get("requested_network_ids")
             if active is None or network_ids is None:
@@ -225,7 +227,7 @@ class PreviewState:
 
     def _run(
         self,
-        suffix: str,
+        suffixes: list[str],
         cancel: threading.Event,
         networks: list[dict],
     ) -> None:
@@ -271,19 +273,24 @@ class PreviewState:
         if not self.no_match:
             network = networks[0]
             local_mac = str(network.get("local_mac") or "02-42-AC-11-00-19")
-            first_mac = "-".join(
-                local_mac.split("-")[:4] + [suffix[:2], suffix[2:]]
-            )
-            with self.lock:
-                self.data["results"] = [
+            local_ip = str(network.get("local_ip") or "192.0.2.25")
+            base_ip = local_ip.rsplit(".", 1)[0] + "."
+            prefix = local_mac.split("-")[:4]
+            results = []
+            for index, suffix in enumerate(suffixes):
+                suffix_mac = str(suffix).upper()
+                results.append(
                     {
                         "interface": network["interface"],
                         "scan_range": network["scan_range"],
-                        "ip": network["local_ip"],
-                        "mac": first_mac,
+                        "ip": base_ip + str(100 + index),
+                        "mac": "-".join(prefix + [suffix_mac[:2], suffix_mac[2:]]),
                         "state": "LOCAL",
-                    },
-                ]
+                        "matched_suffixes": [suffix_mac],
+                    }
+                )
+            with self.lock:
+                self.data["results"] = results
         self._finish("completed")
 
     def _finish(self, status: str) -> None:
@@ -440,10 +447,23 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             )
             return
         if parts == ["scan", "start"]:
-            suffix = str(body.get("suffix") or "").upper()
-            if len(suffix) != 4:
+            raw_suffixes = body.get("suffixes")
+            if raw_suffixes is None:
+                legacy = body.get("suffix")
+                raw_suffixes = [legacy] if legacy else []
+            if not isinstance(raw_suffixes, list) or not raw_suffixes:
                 self._json(400, {"ok": False, "error": "invalid suffix"})
                 return
+            suffixes: list[str] = []
+            for item in raw_suffixes:
+                text = str(item or "").upper()
+                if len(text) != 4 or any(
+                    character not in "0123456789ABCDEF" for character in text
+                ):
+                    self._json(400, {"ok": False, "error": "invalid suffix"})
+                    return
+                if text not in suffixes:
+                    suffixes.append(text)
             try:
                 network_ids = normalize_selected_ids(body.get("network_ids"))
             except ValueError as exc:
@@ -456,9 +476,9 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                     {"ok": False, "error": "所选网段当前不可用，请刷新网段后重试"},
                 )
                 return
-            started = STATE.start(suffix, networks, network_ids)
+            started = STATE.start(suffixes, networks, network_ids)
             actual = STATE.status()
-            if not started and not STATE.matches_request(suffix, network_ids):
+            if not started and not STATE.matches_request(suffixes, network_ids):
                 self._json(
                     409,
                     {
@@ -477,6 +497,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                     "status": actual.get("status"),
                     "job_id": actual.get("job_id", ""),
                     "suffix": actual.get("suffix", ""),
+                    "suffixes": actual.get("suffixes", []),
                     "selected_network_ids": actual.get("selected_network_ids", []),
                 },
             )

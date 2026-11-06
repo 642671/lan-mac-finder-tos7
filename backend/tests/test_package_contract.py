@@ -151,6 +151,13 @@ class PackageContractTests(unittest.TestCase):
         self.assertIn("deviceWebUrl", script)
         self.assertIn('target = "_blank"', script)
         self.assertIn('rel = "noopener noreferrer"', script)
+        self.assertIn('id="suffixInputList"', html)
+        self.assertIn('id="addSuffixButton"', html)
+        self.assertIn('id="targetSummary"', html)
+        self.assertIn("var MAX_SUFFIX_INPUTS = 8", script)
+        self.assertIn("matched_suffixes", script)
+        self.assertIn("normalize_mac_suffixes", server)
+        self.assertIn("suffixes", server)
         titlebar = html.split('class="titlebar-actions"', 1)[1].split("</header>", 1)[0]
         self.assertNotIn('id="themeToggle"', titlebar)
 

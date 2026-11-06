@@ -20,22 +20,28 @@ from lan_mac_finder.server import (  # noqa: E402
 
 class FakeScanManager:
     def __init__(self) -> None:
-        self.active_suffix = ""
+        self.active_suffixes: list[str] = []
         self.network_ids = []
         self.requested_network_ids = None
 
-    def start(self, suffix: str, network_ids=None) -> bool:
-        if self.active_suffix:
+    @staticmethod
+    def _as_list(suffixes) -> list[str]:
+        if isinstance(suffixes, str):
+            return [suffixes]
+        return list(suffixes)
+
+    def start(self, suffixes, network_ids=None) -> bool:
+        if self.active_suffixes:
             return False
-        self.active_suffix = suffix
+        self.active_suffixes = self._as_list(suffixes)
         self.network_ids = list(network_ids or [])
         self.requested_network_ids = (
             None if network_ids is None else list(network_ids)
         )
         return True
 
-    def matches_request(self, suffix: str, network_ids=None) -> bool:
-        if self.active_suffix != suffix:
+    def matches_request(self, suffixes, network_ids=None) -> bool:
+        if set(self.active_suffixes) != set(self._as_list(suffixes)):
             return False
         requested = None if network_ids is None else set(network_ids)
         active = (
@@ -47,10 +53,11 @@ class FakeScanManager:
 
     def status(self) -> dict:
         return {
-            "status": "scanning" if self.active_suffix else "idle",
-            "running": bool(self.active_suffix),
-            "job_id": "job-1" if self.active_suffix else "",
-            "suffix": self.active_suffix,
+            "status": "scanning" if self.active_suffixes else "idle",
+            "running": bool(self.active_suffixes),
+            "job_id": "job-1" if self.active_suffixes else "",
+            "suffix": self.active_suffixes[0] if self.active_suffixes else "",
+            "suffixes": list(self.active_suffixes),
             "selected_network_ids": list(self.network_ids),
         }
 
@@ -88,26 +95,42 @@ class RouteTests(unittest.TestCase):
 
     def test_start_scan_response_uses_actual_job(self) -> None:
         manager = FakeScanManager()
-        status, first = start_scan_result(manager, "456A")
+        status, first = start_scan_result(manager, ["456A"])
         self.assertEqual(status, 202)
         self.assertTrue(first["started"])
         self.assertEqual(first["job_id"], "job-1")
         self.assertEqual(first["suffix"], "456A")
+        self.assertEqual(first["suffixes"], ["456A"])
 
-        status, repeated = start_scan_result(manager, "456A")
+        status, repeated = start_scan_result(manager, ["456A"])
         self.assertEqual(status, 200)
         self.assertFalse(repeated["started"])
         self.assertEqual(repeated["job_id"], "job-1")
         self.assertEqual(repeated["suffix"], "456A")
 
         with self.assertRaises(ApiError) as raised:
-            start_scan_result(manager, "1234")
+            start_scan_result(manager, ["1234"])
+        self.assertEqual(raised.exception.status, 409)
+
+    def test_start_scan_accepts_multiple_suffixes(self) -> None:
+        manager = FakeScanManager()
+        status, payload = start_scan_result(manager, ["456A", "7890"])
+        self.assertEqual(status, 202)
+        self.assertEqual(payload["suffix"], "456A")
+        self.assertEqual(payload["suffixes"], ["456A", "7890"])
+
+        status, repeated = start_scan_result(manager, ["7890", "456A"])
+        self.assertEqual(status, 200)
+        self.assertFalse(repeated["started"])
+
+        with self.assertRaises(ApiError) as raised:
+            start_scan_result(manager, ["456A"])
         self.assertEqual(raised.exception.status, 409)
 
     def test_start_scan_response_preserves_network_selection(self) -> None:
         manager = FakeScanManager()
         selected = ["enp1s0|192.0.2.0/24", "enp2s0|198.51.100.0/24"]
-        status, payload = start_scan_result(manager, "456A", selected)
+        status, payload = start_scan_result(manager, ["456A"], selected)
         self.assertEqual(status, 202)
         self.assertEqual(manager.network_ids, selected)
         self.assertEqual(payload["selected_network_ids"], selected)
@@ -115,18 +138,18 @@ class RouteTests(unittest.TestCase):
     def test_start_scan_rejects_same_suffix_with_different_scope(self) -> None:
         manager = FakeScanManager()
         selected = ["enp1s0|192.0.2.0/24", "enp2s0|198.51.100.0/24"]
-        start_scan_result(manager, "456A", selected)
+        start_scan_result(manager, ["456A"], selected)
 
         status, repeated = start_scan_result(
             manager,
-            "456A",
+            ["456A"],
             list(reversed(selected)),
         )
         self.assertEqual(status, 200)
         self.assertFalse(repeated["started"])
 
         with self.assertRaises(ApiError) as raised:
-            start_scan_result(manager, "456A", [selected[0]])
+            start_scan_result(manager, ["456A"], [selected[0]])
         self.assertEqual(raised.exception.status, 409)
 
 

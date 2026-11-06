@@ -21,7 +21,7 @@ from .core import (
     discover_networks,
     max_configured_hosts,
     network_target_payload,
-    normalize_mac_suffix,
+    normalize_mac_suffixes,
     normalize_network_ids,
     probe_network_devices,
     select_network_targets,
@@ -74,20 +74,20 @@ def parse_network_selection(body: Mapping[str, Any]) -> list[str] | None:
 
 def start_scan_result(
     manager: Any,
-    suffix: str,
+    suffixes: list[str],
     network_ids: list[str] | None = None,
 ) -> tuple[int, dict]:
-    started = manager.start(suffix, network_ids)
+    started = manager.start(suffixes, network_ids)
     actual = manager.status()
     if not started:
         matches_request = getattr(manager, "matches_request", None)
-        same_request = actual.get("suffix") == suffix
+        same_request = actual.get("suffix") == suffixes[0]
         if callable(matches_request):
-            same_request = bool(matches_request(suffix, network_ids))
+            same_request = bool(matches_request(suffixes, network_ids))
         if not same_request:
             raise ApiError(
                 409,
-                "another scan with a different suffix or network selection "
+                "another scan with different MAC suffixes or network selection "
                 "is already running",
             )
     return (
@@ -100,6 +100,7 @@ def start_scan_result(
             "status": actual.get("status"),
             "job_id": actual.get("job_id", ""),
             "suffix": actual.get("suffix", ""),
+            "suffixes": actual.get("suffixes", []),
             "selected_network_ids": actual.get("selected_network_ids", []),
             "message": "scan started" if started else "scan already running",
         },
@@ -304,12 +305,14 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
                 if method != "POST":
                     raise ApiError(405, "method not allowed")
                 body = self._read_json_body()
-                suffix = normalize_mac_suffix(str(body.get("suffix") or ""))
-                if suffix is None:
-                    raise ApiError(
-                        400,
-                        "MAC suffix must use AA-BB, AA:BB, or AABB format",
-                    )
+                raw_suffixes = body.get("suffixes")
+                if raw_suffixes is None:
+                    legacy_suffix = body.get("suffix")
+                    raw_suffixes = [legacy_suffix] if legacy_suffix else []
+                try:
+                    suffixes = normalize_mac_suffixes(raw_suffixes)
+                except ValueError as exc:
+                    raise ApiError(400, str(exc)) from exc
                 network_ids = parse_network_selection(body)
                 inventory_lock = getattr(self.server, "device_scan_lock", None)
                 if inventory_lock is None:
@@ -319,7 +322,7 @@ class LanMacFinderHandler(BaseHTTPRequestHandler):
                 try:
                     status, payload = start_scan_result(
                         self._manager(),
-                        suffix,
+                        suffixes,
                         network_ids,
                     )
                 finally:

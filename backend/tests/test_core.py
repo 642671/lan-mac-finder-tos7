@@ -12,20 +12,26 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from lan_mac_finder.core import (  # noqa: E402
+    MAX_SCAN_SUFFIXES,
     NetworkTarget,
     NeighborRecord,
     ScanCancelled,
     ScanManager,
     collect_neighbor_devices,
     discover_networks,
+    is_scannable_local_address,
     is_virtual_interface,
     match_local_target,
+    match_local_target_multi,
     match_neighbor_records,
+    match_neighbor_records_multi,
+    network_host_count,
     network_target_key,
     network_target_payload,
     network_hosts,
     normalize_mac,
     normalize_mac_suffix,
+    normalize_mac_suffixes,
     normalize_network_ids,
     parse_ipv4_network,
     parse_neighbor_items,
@@ -54,12 +60,47 @@ class MacNormalizationTests(unittest.TestCase):
         )
         self.assertIsNone(normalize_mac("not-a-mac"))
 
+    def test_multi_suffix_normalization(self) -> None:
+        self.assertEqual(normalize_mac_suffixes("45-6a"), ["456A"])
+        self.assertEqual(
+            normalize_mac_suffixes(["45-6a", "45:6A", " 78-90 "]),
+            ["456A", "7890"],
+        )
+        for value in (
+            [],
+            "bad",
+            ["GG-12"],
+            [12],
+            [f"{index:04d}" for index in range(MAX_SCAN_SUFFIXES + 1)],
+        ):
+            with self.assertRaises(ValueError):
+                normalize_mac_suffixes(value)
+
 
 class NetworkTests(unittest.TestCase):
     def test_network_host_limits(self) -> None:
         self.assertEqual(len(network_hosts(parse_ipv4_network("192.0.2.19", 24))), 254)
         self.assertEqual(len(network_hosts(parse_ipv4_network("198.51.100.9", 31))), 2)
         self.assertEqual(len(network_hosts(parse_ipv4_network("203.0.113.7", 32))), 1)
+
+    def test_network_host_count_avoids_materializing_large_subnets(self) -> None:
+        self.assertEqual(network_host_count(parse_ipv4_network("192.0.2.19", 24)), 254)
+        self.assertEqual(network_host_count(parse_ipv4_network("198.51.100.9", 31)), 2)
+        self.assertEqual(network_host_count(parse_ipv4_network("203.0.113.7", 32)), 1)
+        self.assertEqual(network_host_count(parse_ipv4_network("10.1.2.3", 8)), 16777214)
+
+    def test_unscannable_local_address_filter(self) -> None:
+        self.assertTrue(is_scannable_local_address("192.0.2.25"))
+        self.assertTrue(is_scannable_local_address(" 10.1.2.3 "))
+        for value in (
+            "",
+            "0.0.0.0",
+            "127.0.0.1",
+            "169.254.10.1",
+            "224.0.0.1",
+            "not-an-ip",
+        ):
+            self.assertFalse(is_scannable_local_address(value))
 
     def test_virtual_interface_filter(self) -> None:
         self.assertTrue(is_virtual_interface("docker0"))
@@ -193,6 +234,22 @@ class NeighborTests(unittest.TestCase):
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["ip"], "192.0.2.10")
 
+    def test_match_by_multiple_suffixes_annotates_each_result(self) -> None:
+        records = [
+            NeighborRecord("enp1s0", "192.0.2.10", "02-42-AC-11-45-6A", "REACHABLE"),
+            NeighborRecord("enp1s0", "192.0.2.11", "4C-A6-4D-4A-00-12", "STALE"),
+            NeighborRecord("enp1s0", "192.0.2.12", "00-11-22-33-44-55", "REACHABLE"),
+        ]
+        matches = match_neighbor_records_multi(
+            records,
+            ["45:6a", "00-12"],
+            "192.0.2.0/24",
+        )
+        by_ip = {item["ip"]: item for item in matches}
+        self.assertEqual(set(by_ip), {"192.0.2.10", "192.0.2.11"})
+        self.assertEqual(by_ip["192.0.2.10"]["matched_suffixes"], ["456A"])
+        self.assertEqual(by_ip["192.0.2.11"]["matched_suffixes"], ["0012"])
+
     def test_collect_all_known_devices_for_network(self) -> None:
         target = NetworkTarget(
             interface="enp1s0",
@@ -302,6 +359,26 @@ class NeighborTests(unittest.TestCase):
         self.assertEqual(matches[0]["state"], "LOCAL")
         self.assertEqual(matches[0]["mac"], "02-42-AC-11-D4-65")
 
+    def test_match_local_interface_mac_against_multiple_suffixes(self) -> None:
+        target = NetworkTarget(
+            interface="eth0",
+            alias="eth0",
+            local_ip="192.0.2.25",
+            prefix_length=24,
+            gateway="192.0.2.1",
+            network="192.0.2.0",
+            broadcast="192.0.2.255",
+            scan_range="192.0.2.0/24",
+            host_count=254,
+            local_source="192.0.2.25",
+            local_mac="02-42-AC-11-D4-65",
+        )
+        matches = match_local_target_multi(target, ["0019", "d4:65"])
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["state"], "LOCAL")
+        self.assertEqual(matches[0]["matched_suffixes"], ["D465"])
+        self.assertEqual(match_local_target_multi(target, ["0019"]), [])
+
 
 class NetworkSelectionTests(unittest.TestCase):
     def _target(self, interface: str, local_ip: str) -> NetworkTarget:
@@ -409,6 +486,48 @@ class ScanManagerTests(unittest.TestCase):
         self.assertEqual(status["status"], "completed")
         self.assertEqual(status["probed_hosts"], 254)
         self.assertEqual(status["results"][0]["mac"], "02-42-AC-11-45-6A")
+        self.assertEqual(status["suffixes"], ["456A"])
+        self.assertEqual(status["suffix"], "456A")
+
+    def test_scan_manager_collects_matches_for_multiple_suffixes(self) -> None:
+        def discover():
+            return [self._target()], []
+
+        def sweep(target, cancel_event, progress):
+            progress(254)
+            return True
+
+        def neighbors(interface):
+            return [
+                NeighborRecord(
+                    interface,
+                    "192.0.2.10",
+                    "02-42-AC-11-45-6A",
+                    "REACHABLE",
+                ),
+                NeighborRecord(
+                    interface,
+                    "192.0.2.11",
+                    "4C-A6-4D-4A-00-12",
+                    "STALE",
+                ),
+            ]
+
+        manager = ScanManager(discover=discover, neighbors=neighbors, sweep=sweep)
+        self.assertTrue(manager.start(["45-6A", "00:12"]))
+        manager.wait(2)
+        status = manager.status()
+        self.assertEqual(status["status"], "completed")
+        self.assertEqual(status["suffixes"], ["456A", "0012"])
+        self.assertEqual(status["suffix"], "456A")
+        by_ip = {item["ip"]: item for item in status["results"]}
+        self.assertEqual(set(by_ip), {"192.0.2.10", "192.0.2.11"})
+        self.assertEqual(by_ip["192.0.2.10"]["matched_suffixes"], ["456A"])
+        self.assertEqual(by_ip["192.0.2.11"]["matched_suffixes"], ["0012"])
+
+        self.assertTrue(manager.matches_request(["00:12", "456A"]))
+        self.assertFalse(manager.matches_request(["456A"]))
+        self.assertFalse(manager.matches_request(["456A", "0012", "7890"]))
 
     def test_scan_manager_defaults_to_all_networks(self) -> None:
         targets = [
