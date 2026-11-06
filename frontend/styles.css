@@ -673,27 +673,7 @@ body.is-resizing-row * {
 @media (min-width: 821px) {
   .control-section.scan-control {
     /* Offset the reserved 10px scrollbar gutter so rows keep a stable width. */
-    padding-top: 0;
     padding-right: 10px;
-  }
-
-  .scan-control .section-heading {
-    padding-top: 20px;
-  }
-
-  .field-label-row {
-    position: sticky;
-    top: 0;
-    z-index: 3;
-    background: var(--surface-muted);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-  }
-}
-
-@media (min-width: 821px) and (max-height: 760px) {
-  .scan-control .section-heading {
-    padding-top: 15px;
   }
 }
 
@@ -918,21 +898,26 @@ body.is-resizing-row * {
 
 .add-suffix-button {
   display: inline-flex;
-  height: 28px;
+  height: 26px;
   padding: 0 9px;
   align-items: center;
   gap: 5px;
-  border: 1px dashed var(--line-strong);
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: transparent;
+  background: var(--glass-strong);
   color: var(--accent);
   font-size: 11px;
   font-weight: 700;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
 }
 
 .add-suffix-button:hover:not(:disabled) {
-  border-style: solid;
+  border-color: var(--line-strong);
   background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .add-suffix-button:disabled {
@@ -940,8 +925,8 @@ body.is-resizing-row * {
 }
 
 .add-suffix-button svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
 }
 
 .field-hint {
@@ -1572,14 +1557,14 @@ html[data-theme="dark"] .table-toolbar {
   height: 42px;
   padding: 0;
   border-bottom: 1px solid var(--line);
-  background: var(--surface-muted);
+  background:
+    linear-gradient(var(--surface-muted), var(--surface-muted)),
+    var(--surface-solid);
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
   text-align: left;
   white-space: nowrap;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
 }
 
 .sort-button {

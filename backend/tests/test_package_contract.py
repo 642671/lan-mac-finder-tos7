@@ -140,9 +140,17 @@ class PackageContractTests(unittest.TestCase):
         self.assertIn(".remove-suffix-button", styles)
         self.assertIn(".field-label-row", styles)
         self.assertIn("scrollbar-gutter: stable", styles)
-        self.assertRegex(
+        self.assertNotRegex(
             styles,
             r"\.field-label-row\s*\{[^}]*position:\s*sticky",
+        )
+        self.assertNotRegex(
+            styles,
+            r"\.field-label-row\s*\{[^}]*background:",
+        )
+        self.assertRegex(
+            styles,
+            r"\.results-table th\s*\{[^}]*var\(--surface-solid\)",
         )
         self.assertIn('id="selectAllNetworksButton"', html)
         self.assertIn("network_ids", script)
