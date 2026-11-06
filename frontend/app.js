@@ -1477,10 +1477,6 @@ function validateInput(showError) {
 
 function updateSuffixRowMetadata() {
   var rows = suffixRows();
-  var list = byId("suffixInputList");
-  if (list) {
-    list.classList.toggle("is-multiple", rows.length > 1);
-  }
   rows.forEach(function (row, index) {
     var input = row.querySelector("input");
     if (input) {
@@ -1515,7 +1511,6 @@ function createSuffixRow(value) {
   input.setAttribute("data-suffix-input", "");
   input.value = String(value || "");
   shell.appendChild(input);
-  row.appendChild(shell);
   var remove = document.createElement("button");
   remove.type = "button";
   remove.className = "remove-suffix-button";
@@ -1533,7 +1528,8 @@ function createSuffixRow(value) {
   icon.appendChild(first);
   icon.appendChild(second);
   remove.appendChild(icon);
-  row.appendChild(remove);
+  shell.appendChild(remove);
+  row.appendChild(shell);
   return row;
 }
 

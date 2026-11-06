@@ -2,96 +2,96 @@
 name = "局域网 MAC 查询"
 auth = "qishiyi"
 descript = "发现当前局域网设备，读取网卡、IP、MAC 状态，并按 MAC 后四位快速定位设备。"
-release_note = "1.0.014：重新打开时先恢复上次网段和设备总表，后台快速校验，网段未变化立即完成加载，新增网段自动加入；多个 MAC 输入框改为等宽；修正停止搜索后错误显示“已查 0 轮”的提示。"
+release_note = "1.0.015：新增 MAC 输入框的移除叉号移入输入框内部，样式与首个输入框的清除按钮统一，多行输入框保持等宽。"
 important = "扫描只读取本机路由和邻居表，不会更改 NAS 或其他设备的网络配置。"
 
 [zh-hk]
 name = "區域網絡 MAC 搜尋"
 auth = "qishiyi"
 descript = "搜尋目前區域網絡裝置，讀取網卡、IP、MAC 狀態，並按 MAC 尾四位定位裝置。"
-release_note = "1.0.014：重新開啟時先恢復上次網段和裝置總表，背景快速校驗，網段未變化立即完成載入，新增網段自動加入；多個 MAC 輸入框改為等寬；修正停止搜尋後錯誤顯示「已查 0 輪」的提示。"
+release_note = "1.0.015：新增 MAC 輸入框的移除叉號移入輸入框內部，樣式與首個輸入框的清除按鈕統一，多行輸入框保持等寬。"
 important = "掃描只讀取本機路由和鄰居表，不會更改 NAS 或其他裝置的網絡設定。"
 
 [en-us]
 name = "LAN MAC Finder"
 auth = "qishiyi"
 descript = "Find devices on the current LAN and match the last four MAC characters with live interface and neighbor data."
-release_note = "1.0.014: restores the last network list and device inventory on reopen, verifies them quickly in the background, finishes loading immediately when nothing changed, and adds any new networks; equalizes multiple MAC input widths; fixes the incorrect \"0 rounds\" label after stopping."
+release_note = "1.0.015: moves the remove button of an added MAC field inside its input, matches the clear button styling, and keeps every input row the same width."
 important = "The app only reads local routing and neighbor data. It never changes NAS or device network settings."
 
 [fr-fr]
 name = "Recherche MAC LAN"
 auth = "qishiyi"
 descript = "Trouvez les appareils du reseau local et filtrez-les par les quatre derniers caracteres de leur adresse MAC."
-release_note = "1.0.014 : restaure la dernière liste de réseaux et l'inventaire des appareils à la réouverture, les vérifie rapidement en arrière-plan, termine immédiatement le chargement sans changement et ajoute les nouveaux réseaux ; uniformise la largeur des champs MAC ; corrige l'affichage « 0 round » après l'arrêt."
+release_note = "1.0.015 : place le bouton de suppression d'un champ MAC ajouté à l'intérieur du champ, reprend le style du bouton d'effacement et conserve des champs de largeur identique."
 important = "L'application lit uniquement le routage local et la table voisine, sans modifier la configuration reseau."
 
 [de-de]
 name = "LAN-MAC-Suche"
 auth = "qishiyi"
 descript = "Findet Geraete im aktuellen LAN und filtert sie anhand der letzten vier MAC-Zeichen."
-release_note = "1.0.014: stellt beim erneuten Öffnen die letzte Netzwerkliste und Geräteübersicht wieder her, prüft sie schnell im Hintergrund, beendet das Laden sofort ohne Änderungen und ergänzt neue Netzwerke; vereinheitlicht die Breite mehrerer MAC-Felder; korrigiert die falsche Anzeige „0 Runden“ nach dem Stoppen."
+release_note = "1.0.015: verschiebt die Entfernen-Schaltfläche eines hinzugefügten MAC-Feldes in das Eingabefeld, gleicht sie an die Löschen-Schaltfläche an und hält alle Eingabefelder gleich breit."
 important = "Die App liest nur lokale Routing- und Nachbardaten und aendert keine Netzwerkeinstellungen."
 
 [it-it]
 name = "Ricerca MAC LAN"
 auth = "qishiyi"
 descript = "Trova i dispositivi nella LAN corrente e filtra per gli ultimi quattro caratteri dell'indirizzo MAC."
-release_note = "1.0.014: ripristina all'apertura l'ultimo elenco di reti e l'inventario dei dispositivi, li verifica rapidamente in background, completa subito il caricamento se non cambiano e aggiunge le nuove reti; uniforma la larghezza dei campi MAC; corregge l'etichetta errata «0 cicli» dopo l'arresto."
+release_note = "1.0.015: sposta il pulsante di rimozione di un campo MAC aggiunto all'interno del campo, con lo stesso stile del pulsante di cancellazione, e mantiene tutti i campi della stessa larghezza."
 important = "L'app legge solo routing e tabella dei vicini e non modifica la configurazione di rete."
 
 [es-es]
 name = "Buscador MAC LAN"
 auth = "qishiyi"
 descript = "Encuentra dispositivos en la LAN actual y filtra por los ultimos cuatro caracteres de su direccion MAC."
-release_note = "1.0.014: restaura al reabrir la última lista de redes y el inventario de dispositivos, los verifica rápidamente en segundo plano, termina la carga de inmediato si no cambian y añade las redes nuevas; iguala el ancho de los campos MAC; corrige la etiqueta «0 rondas» tras detener la búsqueda."
+release_note = "1.0.015: mueve el botón de eliminar de un campo MAC añadido dentro del campo, con el mismo estilo que el botón de borrar, y mantiene todos los campos del mismo ancho."
 important = "La aplicacion solo lee el enrutamiento y la tabla de vecinos sin cambiar la configuracion de red."
 
 [hu-hu]
 name = "LAN MAC kereső"
 auth = "qishiyi"
 descript = "Megkeresi az aktuális LAN eszközeit, és a MAC-cím utolsó négy karaktere alapján szűri őket."
-release_note = "1.0.014: újranyitáskor visszaállítja a legutóbbi hálózatlistát és eszközleltárt, gyorsan ellenőrzi a háttérben, változás nélkül azonnal befejezi a betöltést, és hozzáadja az új hálózatokat; egységesíti a MAC-mezők szélességét; javítja a leállítás utáni hibás „0 kör” feliratot."
+release_note = "1.0.015: a hozzáadott MAC-mező eltávolítás gombját a mező belsejébe helyezi, a törlés gombbal azonos stílusban, és minden mezőt egyforma szélességen tart."
 important = "Az alkalmazás csak helyi útvonal- és szomszédadatokat olvas, hálózati beállítást nem módosít."
 
 [ja-jp]
 name = "LAN MAC 検索"
 auth = "qishiyi"
 descript = "現在の LAN 上のデバイスを検出し、MAC アドレスの末尾 4 文字で絞り込みます。"
-release_note = "1.0.014：再表示時に前回のネットワークとデバイス一覧を復元し、バックグラウンドで高速確認します。変更がなければすぐに読み込みを完了し、新しいネットワークは自動追加します。複数の MAC 入力欄の幅を統一し、停止後の誤った「0 回」表示を修正しました。"
+release_note = "1.0.015：追加した MAC 入力欄の削除ボタンを入力欄の内側に移動し、クリアボタンと同じスタイルに統一しました。複数の入力欄は同じ幅を保ちます。"
 important = "ローカルのルーティング情報と近隣テーブルのみを読み取り、ネットワーク設定は変更しません。"
 
 [ko-kr]
 name = "LAN MAC 찾기"
 auth = "qishiyi"
 descript = "현재 LAN의 장치를 찾고 MAC 주소 마지막 네 문자로 빠르게 구분합니다."
-release_note = "1.0.014: 다시 열 때 마지막 네트워크와 장치 목록을 복원하고 백그라운드에서 빠르게 확인합니다. 변경이 없으면 즉시 로딩을 마치고 새 네트워크는 자동으로 추가합니다. 여러 MAC 입력란 너비를 통일하고 중지 후 잘못 표시되던 '0회' 문구를 수정했습니다."
+release_note = "1.0.015: 추가된 MAC 입력란의 삭제 버튼을 입력란 안으로 옮기고 지우기 버튼과 같은 스타일로 통일했습니다. 여러 입력란은 같은 너비를 유지합니다."
 important = "앱은 로컬 라우팅과 이웃 테이블만 읽으며 네트워크 설정을 변경하지 않습니다."
 
 [pl-pl]
 name = "Wyszukiwarka MAC LAN"
 auth = "qishiyi"
 descript = "Znajduje urzadzenia w biezacej sieci LAN i filtruje je po czterech ostatnich znakach adresu MAC."
-release_note = "1.0.014: przy ponownym otwarciu przywraca ostatnią listę sieci i spis urządzeń, szybko weryfikuje je w tle, natychmiast kończy ładowanie bez zmian i dodaje nowe sieci; wyrównuje szerokość pól MAC; poprawia błędny komunikat „0 rund” po zatrzymaniu."
+release_note = "1.0.015: przenosi przycisk usuwania dodanego pola MAC do wnętrza pola, ujednolica go z przyciskiem czyszczenia i zachowuje równą szerokość wszystkich pól."
 important = "Aplikacja tylko odczytuje lokalne trasy i tabele sasiadow, bez zmiany konfiguracji sieci."
 
 [ru-ru]
 name = "Поиск MAC в LAN"
 auth = "qishiyi"
 descript = "Находит устройства в текущей локальной сети и фильтрует их по последним четырём символам MAC."
-release_note = "1.0.014: при повторном открытии восстанавливает последний список сетей и инвентарь устройств, быстро проверяет их в фоне, сразу завершает загрузку без изменений и добавляет новые сети; выравнивает ширину полей MAC; исправляет ошибочную надпись «0 циклов» после остановки."
+release_note = "1.0.015: переносит кнопку удаления добавленного поля MAC внутрь поля, оформляет её как кнопку очистки и сохраняет одинаковую ширину всех полей."
 important = "Приложение только читает локальную маршрутизацию и таблицу соседей, не меняя настройки сети."
 
 [tr-tr]
 name = "LAN MAC Bulucu"
 auth = "qishiyi"
 descript = "Geçerli LAN cihazlarını bulur ve MAC adresinin son dört karakterine göre filtreler."
-release_note = "1.0.014: yeniden açılışta son ağ listesini ve cihaz envanterini geri yükler, arka planda hızlıca doğrular, değişiklik yoksa yüklemeyi hemen bitirir ve yeni ağları ekler; birden fazla MAC alanının genişliğini eşitler; durdurma sonrası yanlış \"0 tur\" etiketini düzeltir."
+release_note = "1.0.015: eklenen MAC alanının kaldırma düğmesini alanın içine taşır, temizleme düğmesiyle aynı stile getirir ve tüm alanların genişliğini eşit tutar."
 important = "Uygulama yalnızca yerel yönlendirme ve komşu verilerini okur, ağ ayarlarını değiştirmez."
 
 [pt-pt]
 name = "Localizador MAC LAN"
 auth = "qishiyi"
 descript = "Encontra dispositivos na LAN atual e filtra pelos quatro ultimos caracteres do endereco MAC."
-release_note = "1.0.014: ao reabrir, restaura a última lista de redes e o inventário de dispositivos, verifica-os rapidamente em segundo plano, conclui imediatamente o carregamento sem alterações e adiciona novas redes; uniformiza a largura dos campos MAC; corrige o rótulo incorreto «0 rondas» após parar."
+release_note = "1.0.015: move o botão de remover de um campo MAC adicionado para dentro do campo, com o mesmo estilo do botão de limpar, e mantém todos os campos com a mesma largura."
 important = "A aplicacao apenas le o encaminhamento local e a tabela de vizinhos sem alterar a configuracao de rede."

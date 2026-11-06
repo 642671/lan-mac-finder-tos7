@@ -3,7 +3,7 @@
 `lan-mac-finder` is a TOS 7 iframe Deb application for finding devices in the
 NAS's current physical LAN by the last four characters of their MAC address.
 
-Current version: `1.0.014`.
+Current version: `1.0.015`.
 
 ## Features
 
@@ -22,8 +22,8 @@ Current version: `1.0.014`.
 - Read `REACHABLE`, `STALE`, `DELAY`, and `PROBE` neighbor records.
 - Match `AA-BB`, `AA:BB`, and `AABB` suffixes case-insensitively.
 - Start with one MAC input and add up to 8 search targets one at a time with
-  “添加一个 MAC”; duplicate suffixes are rejected and each added row can be
-  removed again.
+  “添加一个 MAC”; duplicate suffixes are rejected, and each added row's remove
+  control sits inside its input so every row keeps the same width.
 - Search every entered suffix in the same sweep and annotate rows with the
   matched targets. The match table gains a target column when more than one
   suffix is searched, and a per-target summary shows how many devices each
@@ -198,7 +198,7 @@ Generated packages and SHA256 files are written to `dist/`.
 For a test NAS:
 
 ```bash
-sudo dpkg -i lan-mac-finder_1.0.014_x86_64.deb
+sudo dpkg -i lan-mac-finder_1.0.015_x86_64.deb
 systemctl status lanmacfinder-system.service
 curl --unix-socket /var/api/lan-mac-finder.sock http://localhost/health
 ```
@@ -239,8 +239,8 @@ Then run tests, build both architectures, commit, tag, and push:
 
 ```powershell
 git add -A
-git commit -m "release: v1.0.014"
+git commit -m "release: v1.0.015"
 git push origin main
-git tag -a v1.0.014 -m "LAN MAC Finder v1.0.014"
-git push origin v1.0.014
+git tag -a v1.0.015 -m "LAN MAC Finder v1.0.015"
+git push origin v1.0.015
 ```

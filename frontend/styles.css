@@ -828,34 +828,40 @@ body.is-resizing-row * {
   flex: 1 1 auto;
 }
 
-/* 首个输入框没有移除按钮，多行时预留同宽空间，保持所有输入框等宽 */
-.suffix-input-list.is-multiple .suffix-input-row:first-child {
-  padding-right: 42px;
-}
-
 .remove-suffix-button {
   display: inline-flex;
-  width: 34px;
-  height: 44px;
+  width: 30px;
+  height: 30px;
+  margin-right: 6px;
   padding: 0;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--glass-soft);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--muted);
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
 }
 
-.remove-suffix-button:hover {
-  border-color: rgba(180, 60, 60, 0.36);
+.remove-suffix-button:hover:not(:disabled) {
   background: var(--danger-soft);
   color: var(--danger);
 }
 
+.remove-suffix-button:active:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.remove-suffix-button:disabled {
+  opacity: 0.35;
+}
+
 .remove-suffix-button svg {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
 }
 
 .suffix-input-actions {
